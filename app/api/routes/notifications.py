@@ -16,5 +16,5 @@ def list_notifications(db: Session = Depends(get_db), current_user: User = Depen
 def mark_read(notification_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     item = db.get(Notification, notification_id)
     if not item or item.user_id != current_user.id: raise HTTPException(404, "Notification not found")
-    item.read = True; item.status = "READ"; db.commit(); db.refresh(item)
+    item.status = "READ"; db.commit(); db.refresh(item)
     return item

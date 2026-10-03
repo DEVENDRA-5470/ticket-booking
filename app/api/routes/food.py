@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from app.models.notification import Notification
 from sqlalchemy.orm import Session
 from app.core.security import get_current_user
 from app.db.session import get_db
@@ -49,8 +50,41 @@ def create_food_order(payload: FoodOrderRequest, db: Session = Depends(get_db), 
         if not item or not item.available: raise HTTPException(400, "Food item unavailable")
         total += float(item.price) * quantity
         db.add(FoodOrderItem(food_order_id=order.id, food_item_id=item.id, quantity=quantity))
+    db.add(Notification(user_id=current_user.id, channel="IN_APP", message=f"Food order #{order.id} placed for booking {booking.reference}", status="PENDING"))
     db.commit(); db.refresh(order)
     return {"order_id": order.id, "booking_id": booking.id, "status": order.status, "total": total}
+
+@router.post("/orders/bulk", status_code=status.HTTP_201_CREATED)
+def create_bulk_food_orders(
+    booking_id: int,
+    food_item_id: int,
+    quantity: int = 1,
+    count: int = 10,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if quantity < 1 or count < 1 or count > 500:
+        raise HTTPException(400, "quantity must be positive and count must be between 1 and 500")
+    booking = db.get(Booking, booking_id)
+    if not booking or booking.user_id != current_user.id or booking.status != "CONFIRMED":
+        raise HTTPException(400, "Valid confirmed booking required")
+    item = db.get(FoodItem, food_item_id)
+    if not item or not item.available:
+        raise HTTPException(400, "Food item unavailable")
+
+    orders = []
+    total = float(item.price) * quantity
+    for _ in range(count):
+        order = FoodOrder(booking_id=booking.id, status="PLACED")
+        db.add(order)
+        db.flush()
+        db.add(FoodOrderItem(food_order_id=order.id, food_item_id=item.id, quantity=quantity))
+        db.add(Notification(user_id=current_user.id, channel="IN_APP", message=f"Food order #{order.id} placed for booking {booking.reference}", status="PENDING"))
+        orders.append({"order_id": order.id, "total": total})
+
+    db.commit()
+    return {"requested": count, "created": len(orders), "food_item_id": food_item_id, "quantity": quantity, "orders": orders, "total": total * len(orders)}
+
 
 @router.get("/orders")
 def list_my_food_orders(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -63,5 +97,7 @@ def cancel_food_order(order_id: int, db: Session = Depends(get_db), current_user
     booking = db.get(Booking, order.booking_id)
     if not booking or booking.user_id != current_user.id: raise HTTPException(404, "Food order not found")
     if order.status == "CANCELLED": return order
-    order.status = "CANCELLED"; db.commit(); db.refresh(order)
+    order.status = "CANCELLED"
+    db.add(Notification(user_id=current_user.id, channel="IN_APP", message=f"Food order #{order.id} cancelled", status="PENDING"))
+    db.commit(); db.refresh(order)
     return order

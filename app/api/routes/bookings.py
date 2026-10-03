@@ -9,6 +9,7 @@ from app.models.booking import Booking, BookingSeat
 from app.models.event import Event
 from app.models.seat import Seat
 from app.models.user import User
+from app.models.notification import Notification
 
 router = APIRouter()
 
@@ -31,8 +32,49 @@ def create_booking(payload: BookingRequest, db: Session = Depends(get_db), curre
     for seat in seats:
         seat.status = "BOOKED"
         db.add(BookingSeat(booking_id=booking.id, seat_id=seat.id))
+    db.add(Notification(user_id=current_user.id, channel="IN_APP", message=f"Booking {booking.reference} confirmed", status="PENDING"))
     db.commit(); db.refresh(booking)
     return {"id": booking.id, "reference": booking.reference, "event_id": event.id, "seat_ids": ids, "status": booking.status}
+
+@router.post("/bulk", status_code=status.HTTP_201_CREATED)
+def create_bulk_bookings(
+    event_id: int,
+    count: int = 10,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if count < 1 or count > 500:
+        raise HTTPException(400, "count must be between 1 and 500")
+    event = db.get(Event, event_id)
+    if not event or event.status in ("CANCELLED", "COMPLETED"):
+        raise HTTPException(400, "Event is not bookable")
+
+    created = []
+    for _ in range(count):
+        seat = db.execute(
+            select(Seat)
+            .where(Seat.event_id == event_id, Seat.status == "AVAILABLE")
+            .with_for_update()
+            .limit(1)
+        ).scalar_one_or_none()
+        if not seat:
+            break
+        booking = Booking(
+            reference="TKT-" + uuid4().hex[:10].upper(),
+            user_id=current_user.id,
+            event_id=event.id,
+            status="CONFIRMED",
+        )
+        db.add(booking)
+        db.flush()
+        seat.status = "BOOKED"
+        db.add(BookingSeat(booking_id=booking.id, seat_id=seat.id))
+        db.add(Notification(user_id=current_user.id, channel="IN_APP", message=f"Booking {booking.reference} confirmed", status="PENDING"))
+        created.append({"id": booking.id, "reference": booking.reference, "seat_id": seat.id})
+
+    db.commit()
+    return {"requested": count, "created": len(created), "failed": count - len(created), "bookings": created}
+
 
 @router.get("/")
 def my_bookings(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

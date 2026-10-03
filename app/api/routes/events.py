@@ -4,6 +4,9 @@ from time import perf_counter
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import select
+from app.models.booking import Booking, BookingSeat
+from app.models.seat import Seat
+from app.models.payment import Payment
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
@@ -196,7 +199,18 @@ def delete_event(
     venue = event.venue
     starts_at = event.starts_at.isoformat()
 
-    db.delete(event)
+    bookings = db.execute(select(Booking).where(Booking.event_id == event.id)).scalars().all()
+    for booking in bookings:
+        booking.status = "CANCELLED"
+        links = db.execute(select(BookingSeat).where(BookingSeat.booking_id == booking.id)).scalars().all()
+        for link in links:
+            seat = db.get(Seat, link.seat_id)
+            if seat: seat.status = "AVAILABLE"
+        payments = db.execute(select(Payment).where(Payment.booking_id == booking.id)).scalars().all()
+        for payment in payments:
+            if payment.status == "SUCCESS": payment.status = "REFUND_PENDING"
+
+    event.status = "CANCELLED"
     db.commit()
 
     background_tasks.add_task(
@@ -210,6 +224,6 @@ def delete_event(
     )
 
     return {
-        "message": "Event deleted successfully",
+        "message": "Event cancelled and active bookings released",
         "event_id": event_id,
     }

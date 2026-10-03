@@ -91,8 +91,8 @@ def create_booking(
 @router.post("/bulk", status_code=status.HTTP_201_CREATED)
 def create_bulk_bookings(
     event_id: int,
+    background_tasks: BackgroundTasks,
     count: int = 10,
-    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

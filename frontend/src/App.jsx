@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CalendarDays, CheckCircle2, ChevronRight, Clock3, CreditCard, Edit3, LogIn, LogOut, MapPin, Menu, Plus, Search, ShieldCheck, Ticket, Trash2, UserPlus, Users, Utensils, X } from 'lucide-react'
+import { Activity, ArrowRight, Bell, CalendarDays, Check, CheckCircle2, ChevronRight, Clock3, CreditCard, Edit3, LayoutDashboard, LogIn, LogOut, Mail, MapPin, Menu, Plus, RefreshCw, Search, ShieldCheck, Ticket, Trash2, UserPlus, Users, Utensils, X } from 'lucide-react'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
@@ -90,6 +90,22 @@ function Dashboard({token,user,onUnauthorized}) {
   const [bookings,setBookings]=useState([])
   const [notifications,setNotifications]=useState([])
   const [loading,setLoading]=useState(true)
+  const [refreshing,setRefreshing]=useState(false)
+
+  const loadDashboard=async(showSpinner=false)=>{
+    if(showSpinner)setRefreshing(true)
+    try{
+      const [e,b,n]=await Promise.all([
+        api('/v1/events/',{},token),
+        api('/v1/bookings/',{},token),
+        api('/v1/notifications/',{},token)
+      ])
+      setEvents(Array.isArray(e)?e:[])
+      setBookings(Array.isArray(b)?b:[])
+      setNotifications(Array.isArray(n)?n:[])
+    }catch(e){if(e.status===401)onUnauthorized()}
+    finally{setLoading(false);setRefreshing(false)}
+  }
 
   const loadNotifications=async()=>{
     try{
@@ -99,13 +115,9 @@ function Dashboard({token,user,onUnauthorized}) {
   }
 
   useEffect(()=>{
-    let mounted=true
-    Promise.all([api('/v1/events/',{},token),api('/v1/bookings/',{},token),api('/v1/notifications/',{},token)])
-      .then(([e,b,n])=>{if(mounted){setEvents(Array.isArray(e)?e:[]);setBookings(Array.isArray(b)?b:[]);setNotifications(Array.isArray(n)?n:[])}})
-      .catch(e=>{if(e.status===401)onUnauthorized()})
-      .finally(()=>{if(mounted)setLoading(false)})
+    loadDashboard()
     const timer=setInterval(loadNotifications,5000)
-    return()=>{mounted=false;clearInterval(timer)}
+    return()=>clearInterval(timer)
   },[token])
 
   const markNotificationRead=async id=>{
@@ -115,6 +127,7 @@ function Dashboard({token,user,onUnauthorized}) {
 
   const markAllRead=async()=>{
     const unreadItems=notifications.filter(n=>n.status!=='READ')
+    if(!unreadItems.length)return
     try{
       await Promise.all(unreadItems.map(n=>api('/v1/notifications/'+n.id+'/read',{method:'POST'},token)))
       await loadNotifications()
@@ -125,51 +138,95 @@ function Dashboard({token,user,onUnauthorized}) {
   const cancelledBookings=bookings.filter(b=>b.status==='CANCELLED').length
   const unread=notifications.filter(n=>n.status!=='READ').length
 
-  return <section className="dashboardShell">
+  const nav=(key)=>setSection(key)
+
+  return <section className="dashboardShell" id="dashboard">
     <aside className="dashboardSide">
-      <div className="dashIdentity"><div className="avatar">{(user?.name||user?.email||'U').slice(0,1).toUpperCase()}</div><div><b>{user?.name||'User'}</b><span>{user?.email}</span></div></div>
+      <div className="dashBrand"><div className="dashBrandMark"><Ticket size={17}/></div><div><b>TicketFlow</b><span>Operations</span></div></div>
+      <div className="dashIdentity">
+        <div className="avatar">{(user?.name||user?.email||'U').slice(0,1).toUpperCase()}</div>
+        <div><b>{user?.name||'User'}</b><span>{user?.email}</span></div>
+      </div>
       <div className="sideLabel">WORKSPACE</div>
-      <button className={section==='overview'?'sideItem active':'sideItem'} onClick={()=>setSection('overview')}><ShieldCheck size={17}/> Overview</button>
-      <button className={section==='events'?'sideItem active':'sideItem'} onClick={()=>setSection('events')}><CalendarDays size={17}/> Events</button>
-      <button className={section==='bookings'?'sideItem active':'sideItem'} onClick={()=>setSection('bookings')}><Ticket size={17}/> Booking Lab</button>
-      <button className={section==='notifications'?'sideItem active':'sideItem'} onClick={()=>setSection('notifications')}><CheckCircle2 size={17}/> Notifications{unread>0&&<em>{unread}</em>}</button>
-      <div className="sideBottom"><span>TicketFlow</span><small>Modular monolith workspace</small></div>
+      <button className={section==='overview'?'sideItem active':'sideItem'} onClick={()=>nav('overview')}><LayoutDashboard size={17}/> Overview</button>
+      <button className={section==='events'?'sideItem active':'sideItem'} onClick={()=>nav('events')}><CalendarDays size={17}/> Events</button>
+      <button className={section==='bookings'?'sideItem active':'sideItem'} onClick={()=>nav('bookings')}><Ticket size={17}/> Booking Lab</button>
+      <button className={section==='notifications'?'sideItem active':'sideItem'} onClick={()=>nav('notifications')}><Bell size={17}/><span>Notifications</span>{unread>0&&<em>{unread}</em>}</button>
+      <div className="sideBottom">
+        <div className="sideHealth"><i/> All systems operational</div>
+        <small>TicketFlow workspace</small>
+      </div>
     </aside>
+
     <main className="dashboardMain">
-      <div className="dashboardHeader"><div><span className="kicker">TICKETFLOW DASHBOARD</span><h2>{section==='overview'?'Good to see you.':section==='events'?'Event management':section==='bookings'?'Booking & transaction lab':'Notifications'}</h2><p>{section==='overview'?'A focused command center for your ticketing workflow.':section==='events'?'Create, update, bulk-generate and cancel events.':section==='bookings'?'Run ticket, food, payment and cancellation workflows.':'Track platform activity and workflow notifications.'}</p></div><span className="statusPill"><i/> API connected</span></div>
+      <div className="dashboardTopbar">
+        <div className="breadcrumb"><span>Workspace</span><ChevronRight size={13}/><b>{section==='overview'?'Overview':section==='events'?'Events':section==='bookings'?'Booking Lab':'Notifications'}</b></div>
+        <div className="topbarActions">
+          <span className="syncLabel"><i/> Live sync</span>
+          <button className="iconButton" title="Refresh dashboard" onClick={()=>loadDashboard(true)} disabled={refreshing}><RefreshCw size={16} className={refreshing?'spin':''}/></button>
+          <button className="topProfile" onClick={()=>nav('overview')}><span className="miniAvatar">{(user?.name||user?.email||'U').slice(0,1).toUpperCase()}</span><span>{user?.name||'Account'}</span></button>
+        </div>
+      </div>
+
+      <div className="dashboardHeader">
+        <div>
+          <span className="kicker">TICKETFLOW / {section.toUpperCase()}</span>
+          <h2>{section==='overview'?'Command center':section==='events'?'Event management':section==='bookings'?'Booking & transaction lab':'Notifications'}</h2>
+          <p>{section==='overview'?'Monitor your ticketing operations from one focused workspace.':section==='events'?'Create, update and manage your event inventory.':section==='bookings'?'Run controlled booking, food and payment workflows.':'Review, triage and clear platform activity.'}</p>
+        </div>
+        <div className="headerStatus"><span><i/> API connected</span><small>PostgreSQL</small></div>
+      </div>
+
       {section==='overview'&&<div className="dashboardOverview">
-        <div className="dashStat"><span>Events</span><b>{loading?'—':events.length}</b><small>Total event records</small></div>
-        <div className="dashStat"><span>Active bookings</span><b>{loading?'—':activeBookings}</b><small>Currently confirmed</small></div>
-        <div className="dashStat"><span>Cancelled</span><b>{loading?'—':cancelledBookings}</b><small>Booking records</small></div>
-        <div className="dashStat"><span>Notifications</span><b>{loading?'—':unread}</b><small>Needs attention</small></div>
-        <div className="dashWelcome"><div><span className="kicker">WORKFLOW</span><h3>Run the platform from sections, not one long page.</h3><p>Use Events for event data, Booking Lab for transactional testing, and Notifications for system activity.</p></div><button className="primaryCta" onClick={()=>setSection('events')}>Manage events <ArrowRight size={16}/></button></div>
-        <div className="quickGrid"><button onClick={()=>setSection('events')}><CalendarDays/><b>Events</b><span>Manage your event inventory</span></button><button onClick={()=>setSection('bookings')}><Ticket/><b>Bookings & Payments</b><span>Test the full booking workflow</span></button><button onClick={()=>setSection('notifications')}><CheckCircle2/><b>Notifications</b><span>Review workflow activity</span></button></div>
+        <div className="dashStat"><div className="statTop"><span>Total events</span><CalendarDays size={16}/></div><b>{loading?'—':events.length}</b><small>Across your workspace</small></div>
+        <div className="dashStat"><div className="statTop"><span>Active bookings</span><Ticket size={16}/></div><b>{loading?'—':activeBookings}</b><small>Currently confirmed</small></div>
+        <div className="dashStat"><div className="statTop"><span>Cancelled</span><Activity size={16}/></div><b>{loading?'—':cancelledBookings}</b><small>Booking records</small></div>
+        <div className="dashStat"><div className="statTop"><span>Unread activity</span><Bell size={16}/></div><b>{loading?'—':unread}</b><small>{unread?'Needs attention':'All caught up'}</small></div>
+
+        <div className="dashWelcome">
+          <div><span className="kicker">OPERATIONS</span><h3>Your ticketing workspace.</h3><p>Manage inventory, run transaction flows and keep an eye on system activity without jumping between pages.</p></div>
+          <div className="welcomeActions"><button className="secondaryCta" onClick={()=>nav('events')}>Manage events <ArrowRight size={15}/></button><button className="primaryCta" onClick={()=>nav('bookings')}>Open Booking Lab <ArrowRight size={15}/></button></div>
+        </div>
+
+        <div className="sectionLabel"><div><b>Quick actions</b><span>Start where you need to work.</span></div></div>
+        <div className="quickGrid">
+          <button onClick={()=>nav('events')}><div className="quickIcon purple"><CalendarDays size={18}/></div><b>Events</b><span>Create, edit and cancel events</span><ArrowRight size={15}/></button>
+          <button onClick={()=>nav('bookings')}><div className="quickIcon blue"><Ticket size={18}/></div><b>Booking Lab</b><span>Tickets, food and payments</span><ArrowRight size={15}/></button>
+          <button onClick={()=>nav('notifications')}><div className="quickIcon green"><Bell size={18}/></div><b>Notifications</b><span>{unread?unread+' items need attention':'Everything is up to date'}</span><ArrowRight size={15}/></button>
+        </div>
       </div>}
+
       {section==='events'&&<EventManager token={token} user={user} onUnauthorized={onUnauthorized}/>}
       {section==='bookings'&&<BookingLab token={token} onUnauthorized={onUnauthorized}/>}
-      {section==='notifications'&&<NotificationSection notifications={notifications} onMarkRead={markNotificationRead} onMarkAllRead={markAllRead}/>} 
+      {section==='notifications'&&<NotificationSection notifications={notifications} onMarkRead={markNotificationRead} onMarkAllRead={markAllRead}/>}
     </main>
   </section>
 }
 
 function NotificationSection({notifications,onMarkRead,onMarkAllRead}) {
   const unreadCount=notifications.filter(n=>n.status!=='READ').length
+  const [filter,setFilter]=useState('all')
+  const visible=filter==='unread'?notifications.filter(n=>n.status!=='READ'):notifications
 
-  return <div className="dashboardPanel">
-    <div className="panelIntro notificationHeader">
-      <div><span className="kicker">ACTIVITY</span><h3>Recent notifications</h3><p>Live workflow activity. New notifications are refreshed automatically.</p></div>
-      {unreadCount>0&&<button className="markAllButton" onClick={onMarkAllRead}>Mark all as read</button>}
+  return <div className="dashboardPanel notificationPanel">
+    <div className="notificationToolbar">
+      <div className="panelIntro"><span className="kicker">ACTIVITY CENTER</span><h3>Recent notifications</h3><p>Live workflow activity from bookings, food, payments and cancellations.</p></div>
+      <div className="notificationActions">
+        <div className="segmented"><button className={filter==='all'?'active':''} onClick={()=>setFilter('all')}>All <span>{notifications.length}</span></button><button className={filter==='unread'?'active':''} onClick={()=>setFilter('unread')}>Unread <span>{unreadCount}</span></button></div>
+        {unreadCount>0&&<button className="markAllButton" onClick={onMarkAllRead}><Check size={14}/> Mark all read</button>}
+      </div>
     </div>
-    {notifications.length?<div className="dashboardNotifications">{notifications.map(n=>{
+    {visible.length?<div className="dashboardNotifications">{visible.map(n=>{
       const read=n.status==='READ'
-      return <div className={'dashboardNotification '+(read?'isRead':'isUnread')} key={n.id}>
+      return <article className={'dashboardNotification '+(read?'isRead':'isUnread')} key={n.id}>
         <div className="notifIcon">{read?<CheckCircle2 size={17}/>:<span className="notifDot"/>}</div>
         <div className="notifContent">
-          <div className="notifMeta"><b>{read?'READ':'UNREAD'}</b>{!read&&<button onClick={()=>onMarkRead(n.id)}>Mark as read</button>}</div>
+          <div className="notifMeta"><b>{read?'READ':'UNREAD'}</b><span>{read?'Processed':'Needs attention'}</span>{!read&&<button onClick={()=>onMarkRead(n.id)}>Mark as read</button>}</div>
           <p>{n.message}</p>
         </div>
-      </div>
-    })}</div>:<div className="dashboardEmpty"><CheckCircle2 size={28}/><b>No notifications yet</b><span>Workflow activity will appear here.</span></div>}
+        <div className="notifChannel"><Mail size={13}/><span>In-app + email</span></div>
+      </article>
+    })}</div>:<div className="dashboardEmpty"><CheckCircle2 size={30}/><b>{filter==='unread'?'All caught up':'No notifications yet'}</b><span>{filter==='unread'?'There are no unread workflow events.':'Workflow activity will appear here automatically.'}</span></div>}
   </div>
 }
 

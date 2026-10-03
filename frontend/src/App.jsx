@@ -99,7 +99,7 @@ function PublicEvents({onLogin}) {
   </section>
 }
 function EventManager({token,user,onUnauthorized}) {
-  const [events,setEvents]=useState([]),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[notice,setNotice]=useState(''),[error,setError]=useState(''),[editing,setEditing]=useState(null),[showForm,setShowForm]=useState(false),[search,setSearch]=useState('')
+  const [events,setEvents]=useState([]),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[notice,setNotice]=useState(''),[error,setError]=useState(''),[editing,setEditing]=useState(null),[showForm,setShowForm]=useState(false),[showBulk,setShowBulk]=useState(false),[bulkReport,setBulkReport]=useState(null),[search,setSearch]=useState('')
   const loadEvents=async()=>{setLoading(true);try{const d=await api('/v1/events/',{},token);setEvents(Array.isArray(d)?d:[])}catch(e){if(e.status===401)onUnauthorized();else setError(e.message)}finally{setLoading(false)}}
   useEffect(()=>{loadEvents()},[token])
   const filtered=useMemo(()=>{const q=search.trim().toLowerCase();return q?events.filter(e=>(e.name+' '+e.venue).toLowerCase().includes(q)):events},[events,search])
@@ -118,7 +118,7 @@ function EventManager({token,user,onUnauthorized}) {
   }
   return <section className="section manager" id="manage">
     <div className="managerTop"><div><span className="kicker">EVENT MANAGEMENT</span><h2>Your events.</h2><p>Welcome back, <strong>{user?.name||user?.email}</strong>. All operations below use authenticated API calls.</p></div>
-      <button className="primaryCta" onClick={()=>{setEditing(null);setShowForm(true)}}><Plus size={17}/> Add event</button></div>
+      <div className="managerButtons"><button className="secondaryCta" onClick={()=>setShowBulk(true)}><Users size={17}/> Bulk add</button><button className="primaryCta" onClick={()=>{setEditing(null);setShowForm(true)}}><Plus size={17}/> Add event</button></div></div>
     {notice&&<div className="alert success"><CheckCircle2 size={17}/>{notice}<button onClick={()=>setNotice('')}><X size={14}/></button></div>}
     {error&&<div className="alert error"><X size={17}/>{error}<button onClick={()=>setError('')}><X size={14}/></button></div>}
     <div className="toolbar"><div className="search compact"><Search size={17}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search your events..."/></div><span className="count">{events.length} event{events.length===1?'':'s'}</span></div>
@@ -127,7 +127,36 @@ function EventManager({token,user,onUnauthorized}) {
       <div className="rowActions"><button className="action edit" onClick={()=>{setEditing(event);setShowForm(true)}}><Edit3 size={15}/> Edit</button><button className="action danger" onClick={()=>deleteEvent(event)}><Trash2 size={15}/> Delete</button></div>
     </article>)}</div>:<div className="empty managerEmpty"><CalendarDays size={32}/><b>{search?'No matching events.':'No events yet.'}</b><span>{search?'Try another search.':'Create your first event to start the workflow.'}</span>{!search&&<button className="primaryCta small" onClick={()=>setShowForm(true)}><Plus size={15}/> Create event</button>}</div>}
     {showForm&&<EventForm event={editing} saving={saving} close={()=>{setShowForm(false);setEditing(null)}} onSubmit={saveEvent}/>}
+    {showBulk&&<BulkEventModal token={token} onUnauthorized={onUnauthorized} close={()=>setShowBulk(false)} onComplete={report=>{setBulkReport(report);setShowBulk(false);loadEvents()}}/>}
+    {bulkReport&&<BulkReportModal report={bulkReport} close={()=>setBulkReport(null)}/>}
   </section>
+}
+
+function BulkEventModal({token,onUnauthorized,close,onComplete}) {
+  const [count,setCount]=useState(10),[running,setRunning]=useState(false),[error,setError]=useState('')
+  const run=async e=>{e.preventDefault();setRunning(true);setError('')
+    try{const report=await api('/v1/events/bulk?count='+encodeURIComponent(count),{method:'POST'},token);onComplete(report)}
+    catch(e){if(e.status===401)onUnauthorized();else setError(e.message)}finally{setRunning(false)}
+  }
+  return <div className="backdrop" onClick={close}><form className="modal bulkModal" onClick={e=>e.stopPropagation()} onSubmit={run}>
+    <button type="button" className="close" onClick={close}><X/></button>
+    <span className="kicker">BULK EVENT CREATOR</span><h2>Create events in bulk</h2>
+    <p className="modalIntro">Choose how many events to create. Names, venues and future start times will be generated randomly.</p>
+    <label>Number of events<input required type="number" min="1" max="500" value={count} onChange={e=>setCount(Math.max(1,Math.min(500,Number(e.target.value)||1)))}/></label>
+    {error&&<div className="formError">{error}</div>}
+    <div className="bulkHint"><span>Range</span><b>1–500 events</b><span>Report</span><b>PASS / FAIL + time</b></div>
+    <div className="formActions"><button type="button" className="secondaryCta" onClick={close}>Cancel</button><button className="primaryCta" disabled={running}>{running?'Creating…':'Create '+count+' events'} <ChevronRight size={16}/></button></div>
+  </form></div>
+}
+
+function BulkReportModal({report,close}) {
+  return <div className="backdrop" onClick={close}><div className="modal reportModal" onClick={e=>e.stopPropagation()}>
+    <button className="close" onClick={close}><X/></button>
+    <span className="kicker">BULK CREATION REPORT</span><h2>Run complete.</h2>
+    <div className="reportStats"><div><b>{report.requested}</b><span>Requested</span></div><div className="pass"><b>{report.passed}</b><span>Passed</span></div><div className="fail"><b>{report.failed}</b><span>Failed</span></div><div><b>{report.total_time_ms} ms</b><span>Total time</span></div></div>
+    <div className="reportTable">{report.results.map(item=><div className="reportRow" key={item.index}><span>#{item.index}</span><strong className={item.status==='PASS'?'passText':'failText'}>{item.status}</strong><span>{item.name||item.error}</span><span>{item.time_ms} ms</span></div>)}</div>
+    <div className="reportFooter"><span>Average: <b>{report.average_time_ms} ms/event</b></span><button className="primaryCta small" onClick={close}>Done</button></div>
+  </div></div>
 }
 
 function EventForm({event,saving,close,onSubmit}) {

@@ -1,7 +1,22 @@
-from fastapi import APIRouter
-from app.api.routes import users, events, seats, bookings, cancellations, food, payments, notifications
+from fastapi import APIRouter, Depends
 
-api_router = APIRouter()
+from app.api.routes import (
+    users,
+    events,
+    seats,
+    bookings,
+    cancellations,
+    food,
+    payments,
+    notifications,
+)
+from app.core.security import get_current_user
+
+
+api_router = APIRouter(
+    dependencies=[Depends(get_current_user)]
+)
+
 api_router.include_router(users.router, prefix="/users", tags=["Users"])
 api_router.include_router(events.router, prefix="/events", tags=["Events"])
 api_router.include_router(seats.router, prefix="/seats", tags=["Seats"])

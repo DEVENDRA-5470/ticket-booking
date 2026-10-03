@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CalendarDays, CheckCircle2, ChevronRight, Clock3, Edit3, LogIn, LogOut, MapPin, Menu, Plus, Search, ShieldCheck, Ticket, Trash2, UserPlus, Users, X } from 'lucide-react'
+import { ArrowRight, CalendarDays, CheckCircle2, ChevronRight, Clock3, CreditCard, Edit3, LogIn, LogOut, MapPin, Menu, Plus, Search, ShieldCheck, Ticket, Trash2, UserPlus, Users, Utensils, X } from 'lucide-react'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 
@@ -73,7 +73,7 @@ export default function App() {
         </div><div className="availability"><span>● Backend connected</span><b>Secure</b></div></div>
       </section>
 
-      {token ? <EventManager token={token} user={user} onUnauthorized={logout}/> : <PublicEvents onLogin={()=>setAuthMode('login')}/>}
+      {token ? <><EventManager token={token} user={user} onUnauthorized={logout}/><BookingLab token={token} onUnauthorized={logout}/></> : <PublicEvents onLogin={()=>setAuthMode('login')}/>}
       <section className="trust"><div><ShieldCheck/><b>Protected routes</b><span>Business APIs require a valid bearer token.</span></div><div><CheckCircle2/><b>Persistent events</b><span>Events are read and written through PostgreSQL.</span></div><div><Users/><b>Account-based workflow</b><span>Register once and manage your platform session.</span></div></section>
       <section className="section how" id="how"><div className="heading"><div><span className="kicker">HOW IT WORKS</span><h2>Simple workflow, real API calls.</h2></div></div>
         <div className="steps"><Step n="01" icon={<UserPlus/>} title="Register or sign in" text="Create an account or authenticate with your existing credentials."/><Step n="02" icon={<CalendarDays/>} title="Manage events" text="Create, update, list and delete events from the dedicated event section."/><Step n="03" icon={<CheckCircle2/>} title="Receive notifications" text="Event creation triggers the configured email notification workflow."/></div>
@@ -144,6 +144,96 @@ function EventManager({token,user,onUnauthorized}) {
     {bulkReport&&<BulkReportModal report={bulkReport} close={()=>setBulkReport(null)}/>}
   </section>
 }
+
+function BookingLab({token,onUnauthorized}) {
+  const [events,setEvents]=useState([]),[eventId,setEventId]=useState(''),[seats,setSeats]=useState([]),[selectedSeats,setSelectedSeats]=useState([])
+  const [food,setFood]=useState([]),[foodId,setFoodId]=useState(''),[foodQty,setFoodQty]=useState(1),[newFood,setNewFood]=useState({name:'',price:''})
+  const [bookings,setBookings]=useState([]),[bookingId,setBookingId]=useState(''),[bulkCount,setBulkCount]=useState(10)
+  const [bulkFoodCount,setBulkFoodCount]=useState(10),[bulkFoodQty,setBulkFoodQty]=useState(1),[notifications,setNotifications]=useState([])
+  const [message,setMessage]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false)
+
+  const load=async()=>{
+    try{
+      const [ev,fi,bo,no]=await Promise.all([
+        api('/v1/events/',{},token),api('/v1/food/items',{},token),api('/v1/bookings/',{},token),api('/v1/notifications/',{},token)
+      ])
+      setEvents(Array.isArray(ev)?ev:[]);setFood(Array.isArray(fi)?fi:[]);setBookings(Array.isArray(bo)?bo:[]);setNotifications(Array.isArray(no)?no:[])
+      if(!eventId&&ev?.length)setEventId(String(ev[0].id))
+      if(!bookingId&&bo?.length)setBookingId(String(bo[0].id))
+    }catch(e){if(e.status===401)onUnauthorized();else setError(e.message)}
+  }
+  const loadSeats=async id=>{
+    if(!id){setSeats([]);return}
+    try{const d=await api('/v1/seats/event/'+id,{},token);setSeats(Array.isArray(d)?d:[]);setSelectedSeats([])}
+    catch(e){setError(e.message)}
+  }
+  useEffect(()=>{load()},[token])
+  useEffect(()=>{loadSeats(eventId)},[eventId])
+  const run=async(fn)=>{
+    setBusy(true);setError('');setMessage('')
+    try{const result=await fn();setMessage(result?.message||'Operation completed successfully.');await load();if(eventId)await loadSeats(eventId)}catch(e){if(e.status===401)onUnauthorized();else setError(e.message)}finally{setBusy(false)}
+  }
+  const generateSeats=()=>run(()=>api('/v1/seats/event/'+eventId+'/generate?count=50',{method:'POST'},token))
+  const book=()=>run(()=>api('/v1/bookings/',{method:'POST',body:JSON.stringify({event_id:Number(eventId),seat_ids:selectedSeats})},token))
+  const bulkBook=()=>run(()=>api('/v1/bookings/bulk?event_id='+eventId+'&count='+bulkCount,{method:'POST'},token))
+  const placeFood=()=>run(()=>api('/v1/food/orders',{method:'POST',body:JSON.stringify({booking_id:Number(bookingId),items:[[Number(foodId),Number(foodQty)]]})},token))
+  const bulkFood=()=>run(()=>api('/v1/food/orders/bulk?booking_id='+bookingId+'&food_item_id='+foodId+'&quantity='+bulkFoodQty+'&count='+bulkFoodCount,{method:'POST'},token))
+  const createFood=()=>run(async()=>api('/v1/food/items',{method:'POST',body:JSON.stringify({name:newFood.name,price:Number(newFood.price),available:true})},token))
+  const simulatePayment=()=>run(()=>api('/v1/payments/simulate/'+bookingId,{method:'POST'},token))
+  const cancelBooking=()=>run(()=>api('/v1/cancellations/'+bookingId,{method:'POST'},token))
+
+  return <section className="section bookingLab" id="booking-lab">
+    <div className="heading"><div><span className="kicker">BOOKING LAB</span><h2>Tickets, food & payments.</h2><p>Manual and bulk flows are wired to the same transactional APIs used by the platform.</p></div></div>
+    {message&&<div className="alert success"><CheckCircle2 size={17}/>{message}</div>}
+    {error&&<div className="alert error"><X size={17}/>{error}</div>}
+    <div className="labGrid">
+      <div className="labCard">
+        <div className="labTitle"><CalendarDays size={18}/><div><b>Manual ticket booking</b><span>Select an event and available seats.</span></div></div>
+        <select value={eventId} onChange={e=>setEventId(e.target.value)}><option value="">Select event</option>{events.filter(e=>e.status!=='CANCELLED').map(e=><option key={e.id} value={e.id}>{e.name} — {e.venue}</option>)}</select>
+        <div className="seatGrid">{seats.map(s=><button key={s.id} disabled={s.status!=='AVAILABLE'} className={'seat '+(selectedSeats.includes(s.id)?'selected':'')} onClick={()=>setSelectedSeats(x=>x.includes(s.id)?x.filter(id=>id!==s.id):[...x,s.id])}>{s.seat_number}</button>)}</div>
+        {!seats.length&&eventId&&<button className="secondaryCta" onClick={generateSeats} disabled={busy}>Generate 50 seats</button>}
+        <button className="primaryCta full" disabled={!selectedSeats.length||busy} onClick={book}>Book {selectedSeats.length} seat{selectedSeats.length===1?'':'s'}</button>
+      </div>
+      <div className="labCard">
+        <div className="labTitle"><Users size={18}/><div><b>Bulk ticket booking</b><span>Generate bookings for load testing.</span></div></div>
+        <select value={eventId} onChange={e=>setEventId(e.target.value)}><option value="">Select event</option>{events.filter(e=>e.status!=='CANCELLED').map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select>
+        <label>Number of bookings<input type="number" min="1" max="500" value={bulkCount} onChange={e=>setBulkCount(Math.max(1,Math.min(500,Number(e.target.value)||1)))}/></label>
+        <button className="primaryCta full" disabled={!eventId||busy} onClick={bulkBook}>Create {bulkCount} bookings <Users size={16}/></button>
+      </div>
+      <div className="labCard">
+        <div className="labTitle"><Utensils size={18}/><div><b>Manual food order</b><span>Add food to a confirmed booking.</span></div></div>
+        <select value={bookingId} onChange={e=>setBookingId(e.target.value)}><option value="">Select booking</option>{bookings.filter(b=>b.status==='CONFIRMED').map(b=><option key={b.id} value={b.id}>{b.reference} — event #{b.event_id}</option>)}</select>
+        <select value={foodId} onChange={e=>setFoodId(e.target.value)}><option value="">Select food</option>{food.map(f=><option key={f.id} value={f.id}>{f.name} — ₹{f.price}</option>)}</select>
+        <label>Quantity<input type="number" min="1" value={foodQty} onChange={e=>setFoodQty(Math.max(1,Number(e.target.value)||1))}/></label>
+        <button className="primaryCta full" disabled={!bookingId||!foodId||busy} onClick={placeFood}>Place food order <Utensils size={16}/></button>
+      </div>
+      <div className="labCard">
+        <div className="labTitle"><Users size={18}/><div><b>Bulk food orders</b><span>Create repeated food orders for testing.</span></div></div>
+        <select value={bookingId} onChange={e=>setBookingId(e.target.value)}><option value="">Select booking</option>{bookings.filter(b=>b.status==='CONFIRMED').map(b=><option key={b.id} value={b.id}>{b.reference}</option>)}</select>
+        <select value={foodId} onChange={e=>setFoodId(e.target.value)}><option value="">Select food</option>{food.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
+        <label>Orders<input type="number" min="1" max="500" value={bulkFoodCount} onChange={e=>setBulkFoodCount(Math.max(1,Math.min(500,Number(e.target.value)||1)))}/></label>
+        <button className="secondaryCta full" disabled={!bookingId||!foodId||busy} onClick={bulkFood}>Create {bulkFoodCount} food orders</button>
+      </div>
+      <div className="labCard">
+        <div className="labTitle"><Utensils size={18}/><div><b>Add food item</b><span>Create menu data for manual/bulk ordering.</span></div></div>
+        <input value={newFood.name} onChange={e=>setNewFood({...newFood,name:e.target.value})} placeholder="Veg Burger"/>
+        <input type="number" min="1" value={newFood.price} onChange={e=>setNewFood({...newFood,price:e.target.value})} placeholder="Price"/>
+        <button className="secondaryCta full" disabled={!newFood.name||!newFood.price||busy} onClick={createFood}>Add food item <Plus size={16}/></button>
+      </div>
+      <div className="labCard paymentCard">
+        <div className="labTitle"><CreditCard size={18}/><div><b>Payment simulation</b><span>Ticket = ₹500/seat + active food total.</span></div></div>
+        <select value={bookingId} onChange={e=>setBookingId(e.target.value)}><option value="">Select booking</option>{bookings.filter(b=>b.status==='CONFIRMED').map(b=><option key={b.id} value={b.id}>{b.reference}</option>)}</select>
+        <button className="primaryCta full" disabled={!bookingId||busy} onClick={simulatePayment}><CreditCard size={16}/> Simulate successful payment</button>
+        <button className="dangerCta full" disabled={!bookingId||busy} onClick={cancelBooking}><Trash2 size={16}/> Cancel everything</button>
+      </div>
+    </div>
+    <div className="labBottom">
+      <div className="labCard"><div className="labTitle"><Ticket size={18}/><div><b>My bookings</b><span>Select one for food, payment or cancellation.</span></div></div>{bookings.length?<div className="bookingList">{bookings.slice(0,20).map(b=><button key={b.id} className={String(b.id)===String(bookingId)?'bookingItem active':'bookingItem'} onClick={()=>setBookingId(String(b.id))}><b>{b.reference}</b><span>Event #{b.event_id} · {b.status}</span></button>)}</div>:<span className="muted">No bookings yet.</span>}</div>
+      <div className="labCard"><div className="labTitle"><CheckCircle2 size={18}/><div><b>Notifications</b><span>Booking, food, payment and cancellation events.</span></div></div>{notifications.length?<div className="notificationList">{notifications.slice(0,10).map(n=><div className="notificationItem" key={n.id}><b>{n.status}</b><span>{n.message}</span></div>)}</div>:<span className="muted">No notifications yet.</span>}</div>
+    </div>
+  </section>
+}
+
 
 function BulkEventModal({token,onUnauthorized,close,onComplete}) {
   const [count,setCount]=useState(10),[running,setRunning]=useState(false),[error,setError]=useState('')

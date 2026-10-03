@@ -16,4 +16,4 @@ Setup:
 
 API docs: /docs
 
-This is intentionally one deployable application. Later we will extract domains into microservices and introduce Kafka.
+This is intentionally one deployable modular monolith. Kafka and microservices are deliberately deferred. We will first complete the business flows, load-test and failure-test the monolith, measure the real bottlenecks, and only then evolve the architecture when a demonstrated problem justifies it. See [PROJECT_ROADMAP.md](PROJECT_ROADMAP.md) for the engineering roadmap.

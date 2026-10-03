@@ -70,6 +70,32 @@ def get_event(
     return event
 
 
+@router.put("/{event_id}")
+def update_event(
+    event_id: int,
+    name: str,
+    venue: str,
+    starts_at: datetime,
+    db: Session = Depends(get_db),
+):
+    event = db.get(Event, event_id)
+
+    if event is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Event not found",
+        )
+
+    event.name = name
+    event.venue = venue
+    event.starts_at = starts_at
+
+    db.commit()
+    db.refresh(event)
+
+    return event
+
+
 @router.delete("/{event_id}")
 def delete_event(
     event_id: int,

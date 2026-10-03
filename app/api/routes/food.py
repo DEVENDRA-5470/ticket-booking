@@ -1,5 +1,67 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+from app.core.security import get_current_user
+from app.db.session import get_db
+from app.models.food import FoodItem, FoodOrder, FoodOrderItem
+from app.models.booking import Booking
+from app.models.user import User
+
 router = APIRouter()
+
+class FoodRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    price: float = Field(gt=0)
+    available: bool = True
+
+class FoodOrderRequest(BaseModel):
+    booking_id: int
+    items: list[tuple[int, int]]
+
 @router.get("/items")
-def list_food():
-    return {"module": "food", "items": []}
+def list_food(db: Session = Depends(get_db)):
+    return db.execute(select(FoodItem).order_by(FoodItem.id)).scalars().all()
+
+@router.post("/items", status_code=status.HTTP_201_CREATED)
+def create_food(payload: FoodRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    item = FoodItem(name=payload.name, price=payload.price, available=payload.available)
+    db.add(item); db.commit(); db.refresh(item)
+    return item
+
+@router.put("/items/{item_id}")
+def update_food(item_id: int, payload: FoodRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    item = db.get(FoodItem, item_id)
+    if not item: raise HTTPException(404, "Food item not found")
+    item.name, item.price, item.available = payload.name, payload.price, payload.available
+    db.commit(); db.refresh(item)
+    return item
+
+@router.post("/orders", status_code=status.HTTP_201_CREATED)
+def create_food_order(payload: FoodOrderRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    booking = db.get(Booking, payload.booking_id)
+    if not booking or booking.user_id != current_user.id or booking.status != "CONFIRMED": raise HTTPException(400, "Valid confirmed booking required")
+    order = FoodOrder(booking_id=booking.id, status="PLACED"); db.add(order); db.flush()
+    total = 0
+    for food_id, quantity in payload.items:
+        if quantity < 1: raise HTTPException(400, "Quantity must be positive")
+        item = db.get(FoodItem, food_id)
+        if not item or not item.available: raise HTTPException(400, "Food item unavailable")
+        total += float(item.price) * quantity
+        db.add(FoodOrderItem(food_order_id=order.id, food_item_id=item.id, quantity=quantity))
+    db.commit(); db.refresh(order)
+    return {"order_id": order.id, "booking_id": booking.id, "status": order.status, "total": total}
+
+@router.get("/orders")
+def list_my_food_orders(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return db.execute(select(FoodOrder).join(Booking, Booking.id == FoodOrder.booking_id).where(Booking.user_id == current_user.id).order_by(FoodOrder.id.desc())).scalars().all()
+
+@router.post("/orders/{order_id}/cancel")
+def cancel_food_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    order = db.get(FoodOrder, order_id)
+    if not order: raise HTTPException(404, "Food order not found")
+    booking = db.get(Booking, order.booking_id)
+    if not booking or booking.user_id != current_user.id: raise HTTPException(404, "Food order not found")
+    if order.status == "CANCELLED": return order
+    order.status = "CANCELLED"; db.commit(); db.refresh(order)
+    return order

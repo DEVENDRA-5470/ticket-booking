@@ -3,10 +3,11 @@ from random import choice, randint
 from time import perf_counter
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from app.models.booking import Booking, BookingSeat
 from app.models.seat import Seat
 from app.models.payment import Payment
+from app.models.food import FoodOrder, FoodOrderItem
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
@@ -182,77 +183,63 @@ def update_event(
 
 @router.delete("/all")
 def delete_all_events(
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    events = db.execute(select(Event)).scalars().all()
+    event_ids = db.execute(select(Event.id)).scalars().all()
 
-    if not events:
+    if not event_ids:
         return {
             "message": "No events found",
-            "cancelled_events": 0,
-            "cancelled_bookings": 0,
-            "released_seats": 0,
-            "refunds_pending": 0,
+            "deleted_events": 0,
+            "deleted_bookings": 0,
+            "deleted_seats": 0,
+            "deleted_food_orders": 0,
+            "deleted_payments": 0,
         }
 
-    cancelled_events = 0
-    cancelled_bookings = 0
-    released_seats = 0
-    refunds_pending = 0
+    booking_ids = select(Booking.id).where(Booking.event_id.in_(event_ids))
+    food_order_ids = select(FoodOrder.id).where(FoodOrder.booking_id.in_(booking_ids))
 
-    for event in events:
-        bookings = db.execute(
-            select(Booking).where(Booking.event_id == event.id)
-        ).scalars().all()
+    deleted_food_items = db.execute(
+        delete(FoodOrderItem).where(FoodOrderItem.food_order_id.in_(food_order_ids))
+    ).rowcount or 0
 
-        for booking in bookings:
-            if booking.status != "CANCELLED":
-                booking.status = "CANCELLED"
-                cancelled_bookings += 1
+    deleted_food_orders = db.execute(
+        delete(FoodOrder).where(FoodOrder.booking_id.in_(booking_ids))
+    ).rowcount or 0
 
-            links = db.execute(
-                select(BookingSeat).where(BookingSeat.booking_id == booking.id)
-            ).scalars().all()
+    deleted_booking_seats = db.execute(
+        delete(BookingSeat).where(BookingSeat.booking_id.in_(booking_ids))
+    ).rowcount or 0
 
-            for link in links:
-                seat = db.get(Seat, link.seat_id)
-                if seat and seat.status != "AVAILABLE":
-                    seat.status = "AVAILABLE"
-                    released_seats += 1
+    deleted_payments = db.execute(
+        delete(Payment).where(Payment.booking_id.in_(booking_ids))
+    ).rowcount or 0
 
-            payments = db.execute(
-                select(Payment).where(Payment.booking_id == booking.id)
-            ).scalars().all()
+    deleted_bookings = db.execute(
+        delete(Booking).where(Booking.id.in_(booking_ids))
+    ).rowcount or 0
 
-            for payment in payments:
-                if payment.status == "SUCCESS":
-                    payment.status = "REFUND_PENDING"
-                    refunds_pending += 1
+    deleted_seats = db.execute(
+        delete(Seat).where(Seat.event_id.in_(event_ids))
+    ).rowcount or 0
 
-        if event.status != "CANCELLED":
-            event.status = "CANCELLED"
-            cancelled_events += 1
+    deleted_events = db.execute(
+        delete(Event).where(Event.id.in_(event_ids))
+    ).rowcount or 0
 
     db.commit()
 
-    background_tasks.add_task(
-        send_event_notification_email,
-        current_user.email,
-        current_user.name,
-        "All events cancelled",
-        f"{cancelled_events} events",
-        "TicketFlow",
-        datetime.now(timezone.utc).isoformat(),
-    )
-
     return {
-        "message": "All events cancelled and active bookings released",
-        "cancelled_events": cancelled_events,
-        "cancelled_bookings": cancelled_bookings,
-        "released_seats": released_seats,
-        "refunds_pending": refunds_pending,
+        "message": "All events and their dependent booking data permanently deleted",
+        "deleted_events": deleted_events,
+        "deleted_bookings": deleted_bookings,
+        "deleted_seats": deleted_seats,
+        "deleted_food_orders": deleted_food_orders,
+        "deleted_food_order_items": deleted_food_items,
+        "deleted_payments": deleted_payments,
+        "deleted_booking_seats": deleted_booking_seats,
     }
 
 

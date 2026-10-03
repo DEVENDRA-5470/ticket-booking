@@ -1,11 +1,14 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.security import get_current_user
 from app.db.session import get_db
 from app.models.event import Event
+from app.models.user import User
+from app.services.email import send_event_created_email
 
 
 router = APIRouter()
@@ -16,7 +19,9 @@ def create_event(
     name: str,
     venue: str,
     starts_at: datetime,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     event = Event(
         name=name,
@@ -27,6 +32,15 @@ def create_event(
     db.add(event)
     db.commit()
     db.refresh(event)
+
+    background_tasks.add_task(
+        send_event_created_email,
+        current_user.email,
+        current_user.name,
+        event.name,
+        event.venue,
+        event.starts_at.isoformat(),
+    )
 
     return event
 

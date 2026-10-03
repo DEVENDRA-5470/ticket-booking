@@ -1,6 +1,8 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from random import choice, randint
+from time import perf_counter
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,6 +16,29 @@ from app.services.email import send_event_created_email, send_event_notification
 router = APIRouter()
 
 
+RANDOM_EVENT_NAMES = [
+    "DevOps Summit", "Cloud Engineering Meetup", "Kubernetes Conference",
+    "Platform Engineering Day", "SRE Connect", "Backend Builders Night",
+    "AI Engineering Forum", "Open Source Conference",
+]
+
+RANDOM_VENUES = [
+    "Delhi Convention Centre", "India Expo Mart", "Tech Park Auditorium",
+    "City Arena", "Innovation Hub", "Grand Conference Hall",
+]
+
+
+def random_event_data(index: int) -> tuple[str, str, datetime]:
+    name = f"{choice(RANDOM_EVENT_NAMES)} #{index}"
+    venue = choice(RANDOM_VENUES)
+    starts_at = datetime.now(timezone.utc) + timedelta(
+        days=randint(7, 180),
+        hours=randint(0, 23),
+        minutes=randint(0, 59),
+    )
+    return name, venue, starts_at
+
+
 @router.post("/", status_code=status.HTTP_201_CREATED)
 def create_event(
     name: str,
@@ -23,11 +48,7 @@ def create_event(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    event = Event(
-        name=name,
-        venue=venue,
-        starts_at=starts_at,
-    )
+    event = Event(name=name, venue=venue, starts_at=starts_at)
 
     db.add(event)
     db.commit()
@@ -45,28 +66,69 @@ def create_event(
     return event
 
 
+@router.post("/bulk", status_code=status.HTTP_201_CREATED)
+def create_bulk_events(
+    count: int = Query(..., ge=1, le=500),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    started = perf_counter()
+    results = []
+
+    for index in range(1, count + 1):
+        item_started = perf_counter()
+        try:
+            name, venue, starts_at = random_event_data(index)
+            event = Event(name=name, venue=venue, starts_at=starts_at)
+            db.add(event)
+            db.commit()
+            db.refresh(event)
+
+            results.append({
+                "index": index,
+                "status": "PASS",
+                "event_id": event.id,
+                "name": event.name,
+                "venue": event.venue,
+                "time_ms": round((perf_counter() - item_started) * 1000, 2),
+            })
+        except Exception as exc:
+            db.rollback()
+            results.append({
+                "index": index,
+                "status": "FAIL",
+                "error": str(exc)[:200],
+                "time_ms": round((perf_counter() - item_started) * 1000, 2),
+            })
+
+    total_ms = round((perf_counter() - started) * 1000, 2)
+    passed = sum(item["status"] == "PASS" for item in results)
+
+    return {
+        "requested": count,
+        "passed": passed,
+        "failed": count - passed,
+        "total_time_ms": total_ms,
+        "average_time_ms": round(total_ms / count, 2),
+        "results": results,
+        "created_by": current_user.email,
+    }
+
+
 @router.get("/")
 def list_events(db: Session = Depends(get_db)):
-    result = db.execute(
-        select(Event).order_by(Event.starts_at)
-    )
-
+    result = db.execute(select(Event).order_by(Event.starts_at))
     return result.scalars().all()
 
 
 @router.get("/{event_id}")
-def get_event(
-    event_id: int,
-    db: Session = Depends(get_db),
-):
+def get_event(event_id: int, db: Session = Depends(get_db)):
     event = db.get(Event, event_id)
-
     if event is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Event not found",
         )
-
     return event
 
 

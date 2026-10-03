@@ -34,3 +34,39 @@ Thanks,
         server.starttls()
         server.login(settings.smtp_username, settings.smtp_password)
         server.send_message(message)
+
+
+def send_welcome_email(
+    recipient_email: str,
+    recipient_name: str,
+) -> None:
+    message = EmailMessage()
+    message["Subject"] = f"Welcome to {settings.app_name}"
+    message["From"] = settings.smtp_from_email
+    message["To"] = recipient_email
+
+    message.set_content(
+        f"""Hi {recipient_name},
+
+Welcome to {settings.app_name}! 🎉
+
+Your account has been created successfully.
+
+You can now:
+- Browse available events
+- Book tickets
+- Order food
+- Manage your bookings
+- Receive important notifications
+
+We're happy to have you with us.
+
+Thanks,
+{settings.app_name}
+"""
+    )
+
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as server:
+        server.starttls()
+        server.login(settings.smtp_username, settings.smtp_password)
+        server.send_message(message)

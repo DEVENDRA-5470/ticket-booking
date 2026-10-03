@@ -119,19 +119,19 @@ function EventManager({token,user,onUnauthorized}) {
 
   const deleteAllEvents=async()=>{
     if(!events.length)return
-    const confirmed=window.confirm('Delete ALL '+events.length+' events? This will cancel all event bookings, release booked seats and mark successful payments as REFUND_PENDING. This action cannot be undone.')
+    const confirmed=window.confirm('PERMANENTLY DELETE ALL '+events.length+' EVENTS? This will permanently remove their bookings, seats, food orders and payments. This cannot be undone.')
     if(!confirmed)return
     setSaving(true);setError('');setNotice('')
     try{
       const result=await api('/v1/events/all',{method:'DELETE'},token)
-      setNotice(result.message+' ('+result.cancelled_events+' events, '+result.cancelled_bookings+' bookings).')
+      setNotice(result.message+' ('+result.deleted_events+' events, '+result.deleted_bookings+' bookings removed).')
       await loadEvents()
     }catch(e){if(e.status===401)onUnauthorized();else setError(e.message)}
     finally{setSaving(false)}
   }
   return <section className="section manager" id="manage">
     <div className="managerTop"><div><span className="kicker">EVENT MANAGEMENT</span><h2>Your events.</h2><p>Welcome back, <strong>{user?.name||user?.email}</strong>. All operations below use authenticated API calls.</p></div>
-      <div className="managerButtons"><button className="secondaryCta" onClick={()=>setShowBulk(true)}><Users size={17}/> Bulk add</button><button className="primaryCta" onClick={()=>{setEditing(null);setShowForm(true)}}><Plus size={17}/> Add event</button><button className="dangerCta" disabled={!events.length||saving} onClick={deleteAllEvents}><Trash2 size={17}/> Delete all</button></div></div>
+      <div className="managerButtons"><button className="secondaryCta" onClick={()=>setShowBulk(true)}><Users size={17}/> Bulk add</button><button className="primaryCta" onClick={()=>{setEditing(null);setShowForm(true)}}><Plus size={17}/> Add event</button><button className="dangerCta" disabled={!events.length||saving} onClick={deleteAllEvents}><Trash2 size={17}/> {saving ? "Deleting…" : "Delete all"}</button></div></div>
     {notice&&<div className="alert success"><CheckCircle2 size={17}/>{notice}<button onClick={()=>setNotice('')}><X size={14}/></button></div>}
     {error&&<div className="alert error"><X size={17}/>{error}<button onClick={()=>setError('')}><X size={14}/></button></div>}
     <div className="toolbar"><div className="search compact"><Search size={17}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search your events..."/></div><span className="count">{events.length} event{events.length===1?'':'s'}</span></div>

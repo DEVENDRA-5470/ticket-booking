@@ -91,14 +91,35 @@ function Dashboard({token,user,onUnauthorized}) {
   const [notifications,setNotifications]=useState([])
   const [loading,setLoading]=useState(true)
 
+  const loadNotifications=async()=>{
+    try{
+      const n=await api('/v1/notifications/',{},token)
+      setNotifications(Array.isArray(n)?n:[])
+    }catch(e){if(e.status===401)onUnauthorized()}
+  }
+
   useEffect(()=>{
     let mounted=true
     Promise.all([api('/v1/events/',{},token),api('/v1/bookings/',{},token),api('/v1/notifications/',{},token)])
       .then(([e,b,n])=>{if(mounted){setEvents(Array.isArray(e)?e:[]);setBookings(Array.isArray(b)?b:[]);setNotifications(Array.isArray(n)?n:[])}})
       .catch(e=>{if(e.status===401)onUnauthorized()})
       .finally(()=>{if(mounted)setLoading(false)})
-    return()=>{mounted=false}
+    const timer=setInterval(loadNotifications,5000)
+    return()=>{mounted=false;clearInterval(timer)}
   },[token])
+
+  const markNotificationRead=async id=>{
+    try{await api('/v1/notifications/'+id+'/read',{method:'POST'},token);await loadNotifications()}
+    catch(e){if(e.status===401)onUnauthorized()}
+  }
+
+  const markAllRead=async()=>{
+    const unreadItems=notifications.filter(n=>n.status!=='READ')
+    try{
+      await Promise.all(unreadItems.map(n=>api('/v1/notifications/'+n.id+'/read',{method:'POST'},token)))
+      await loadNotifications()
+    }catch(e){if(e.status===401)onUnauthorized()}
+  }
 
   const activeBookings=bookings.filter(b=>b.status==='CONFIRMED').length
   const cancelledBookings=bookings.filter(b=>b.status==='CANCELLED').length
@@ -126,15 +147,29 @@ function Dashboard({token,user,onUnauthorized}) {
       </div>}
       {section==='events'&&<EventManager token={token} user={user} onUnauthorized={onUnauthorized}/>}
       {section==='bookings'&&<BookingLab token={token} onUnauthorized={onUnauthorized}/>}
-      {section==='notifications'&&<NotificationSection notifications={notifications}/>}
+      {section==='notifications'&&<NotificationSection notifications={notifications} onMarkRead={markNotificationRead} onMarkAllRead={markAllRead}/>} 
     </main>
   </section>
 }
 
-function NotificationSection({notifications}) {
+function NotificationSection({notifications,onMarkRead,onMarkAllRead}) {
+  const unreadCount=notifications.filter(n=>n.status!=='READ').length
+
   return <div className="dashboardPanel">
-    <div className="panelIntro"><div><span className="kicker">ACTIVITY</span><h3>Recent notifications</h3><p>Booking, food, payment and cancellation events appear here.</p></div></div>
-    {notifications.length?<div className="dashboardNotifications">{notifications.map(n=><div className="dashboardNotification" key={n.id}><div className="notifIcon"><CheckCircle2 size={17}/></div><div><b>{n.status}</b><p>{n.message}</p></div></div>)}</div>:<div className="dashboardEmpty"><CheckCircle2 size={28}/><b>No notifications yet</b><span>Workflow activity will appear here.</span></div>}
+    <div className="panelIntro notificationHeader">
+      <div><span className="kicker">ACTIVITY</span><h3>Recent notifications</h3><p>Live workflow activity. New notifications are refreshed automatically.</p></div>
+      {unreadCount>0&&<button className="markAllButton" onClick={onMarkAllRead}>Mark all as read</button>}
+    </div>
+    {notifications.length?<div className="dashboardNotifications">{notifications.map(n=>{
+      const read=n.status==='READ'
+      return <div className={'dashboardNotification '+(read?'isRead':'isUnread')} key={n.id}>
+        <div className="notifIcon">{read?<CheckCircle2 size={17}/>:<span className="notifDot"/>}</div>
+        <div className="notifContent">
+          <div className="notifMeta"><b>{read?'READ':'UNREAD'}</b>{!read&&<button onClick={()=>onMarkRead(n.id)}>Mark as read</button>}</div>
+          <p>{n.message}</p>
+        </div>
+      </div>
+    })}</div>:<div className="dashboardEmpty"><CheckCircle2 size={28}/><b>No notifications yet</b><span>Workflow activity will appear here.</span></div>}
   </div>
 }
 

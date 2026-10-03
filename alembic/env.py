@@ -1,5 +1,3 @@
-from logging.config import fileConfig
-
 from sqlalchemy import engine_from_config, pool
 
 from alembic import context
@@ -15,10 +13,6 @@ config.set_main_option(
     "sqlalchemy.url",
     settings.database_url.replace("%", "%%"),
 )
-
-
-if config.config_file_name:
-    fileConfig(config.config_file_name)
 
 
 target_metadata = Base.metadata

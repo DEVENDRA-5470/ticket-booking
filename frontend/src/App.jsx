@@ -41,6 +41,12 @@ export default function App() {
     setToken(data.access_token); setUser(u); setAuthMode(null)
   }
 
+  if (token) {
+    return <div className="app authenticatedApp">
+      <Dashboard token={token} user={user} onUnauthorized={logout} onLogout={logout}/>
+    </div>
+  }
+
   return <div className="app">
     <header className="nav">
       <a className="brand" href="#top"><i><Ticket size={20}/></i>Ticket<span>Flow</span></a>
@@ -84,7 +90,7 @@ export default function App() {
   </div>
 }
 
-function Dashboard({token,user,onUnauthorized}) {
+function Dashboard({token,user,onUnauthorized,onLogout}) {
   const [section,setSection]=useState('overview')
   const [events,setEvents]=useState([])
   const [bookings,setBookings]=useState([])
@@ -164,7 +170,7 @@ function Dashboard({token,user,onUnauthorized}) {
         <div className="topbarActions">
           <span className="syncLabel"><i/> Live sync</span>
           <button className="iconButton" title="Refresh dashboard" onClick={()=>loadDashboard(true)} disabled={refreshing}><RefreshCw size={16} className={refreshing?'spin':''}/></button>
-          <button className="topProfile" onClick={()=>nav('overview')}><span className="miniAvatar">{(user?.name||user?.email||'U').slice(0,1).toUpperCase()}</span><span>{user?.name||'Account'}</span></button>
+          <div className="topProfile"><span className="miniAvatar">{(user?.name||user?.email||'U').slice(0,1).toUpperCase()}</span><span>{user?.name||'Account'}</span><button title="Log out" onClick={onLogout}><LogOut size={14}/></button></div>
         </div>
       </div>
 

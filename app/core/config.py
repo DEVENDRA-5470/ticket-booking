@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     smtp_username: str
     smtp_password: str
     smtp_from_email: str
+    smtp_starttls: bool = True
+    smtp_timeout: int = 20
 
     model_config = SettingsConfigDict(
         env_file=".env",

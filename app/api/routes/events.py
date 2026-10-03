@@ -8,7 +8,7 @@ from app.core.security import get_current_user
 from app.db.session import get_db
 from app.models.event import Event
 from app.models.user import User
-from app.services.email import send_event_created_email
+from app.services.email import send_event_created_email, send_event_notification_email
 
 
 router = APIRouter()
@@ -76,7 +76,9 @@ def update_event(
     name: str,
     venue: str,
     starts_at: datetime,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     event = db.get(Event, event_id)
 
@@ -85,6 +87,12 @@ def update_event(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Event not found",
         )
+
+    previous_details = (
+        f"Previous event details:\n"
+        f"Previous venue: {event.venue}\n"
+        f"Previous starts at: {event.starts_at.isoformat()}\n"
+    )
 
     event.name = name
     event.venue = venue
@@ -93,13 +101,26 @@ def update_event(
     db.commit()
     db.refresh(event)
 
+    background_tasks.add_task(
+        send_event_notification_email,
+        current_user.email,
+        current_user.name,
+        "Updated",
+        event.name,
+        event.venue,
+        event.starts_at.isoformat(),
+        previous_details,
+    )
+
     return event
 
 
 @router.delete("/{event_id}")
 def delete_event(
     event_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     event = db.get(Event, event_id)
 
@@ -109,8 +130,22 @@ def delete_event(
             detail="Event not found",
         )
 
+    event_name = event.name
+    venue = event.venue
+    starts_at = event.starts_at.isoformat()
+
     db.delete(event)
     db.commit()
+
+    background_tasks.add_task(
+        send_event_notification_email,
+        current_user.email,
+        current_user.name,
+        "Deleted",
+        event_name,
+        venue,
+        starts_at,
+    )
 
     return {
         "message": "Event deleted successfully",

@@ -14,6 +14,7 @@ from app.core.security import get_current_user
 from app.db.session import get_db
 from app.models.event import Event
 from app.models.user import User
+from app.models.notification import Notification
 from app.services.email import send_event_created_email, send_event_notification_email
 
 
@@ -57,6 +58,14 @@ def create_event(
     db.add(event)
     db.commit()
     db.refresh(event)
+
+    db.add(Notification(
+        user_id=current_user.id,
+        channel="IN_APP",
+        message=f"Event '{event.name}' created successfully",
+        status="PENDING",
+    ))
+    db.commit()
 
     background_tasks.add_task(
         send_event_created_email,
@@ -167,6 +176,14 @@ def update_event(
     db.commit()
     db.refresh(event)
 
+    db.add(Notification(
+        user_id=current_user.id,
+        channel="IN_APP",
+        message=f"Event '{event.name}' updated successfully",
+        status="PENDING",
+    ))
+    db.commit()
+
     background_tasks.add_task(
         send_event_notification_email,
         current_user.email,
@@ -274,6 +291,12 @@ def delete_event(
             if payment.status == "SUCCESS": payment.status = "REFUND_PENDING"
 
     event.status = "CANCELLED"
+    db.add(Notification(
+        user_id=current_user.id,
+        channel="IN_APP",
+        message=f"Event '{event_name}' cancelled",
+        status="PENDING",
+    ))
     db.commit()
 
     background_tasks.add_task(

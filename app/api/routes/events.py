@@ -180,6 +180,82 @@ def update_event(
     return event
 
 
+@router.delete("/all")
+def delete_all_events(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    events = db.execute(select(Event)).scalars().all()
+
+    if not events:
+        return {
+            "message": "No events found",
+            "cancelled_events": 0,
+            "cancelled_bookings": 0,
+            "released_seats": 0,
+            "refunds_pending": 0,
+        }
+
+    cancelled_events = 0
+    cancelled_bookings = 0
+    released_seats = 0
+    refunds_pending = 0
+
+    for event in events:
+        bookings = db.execute(
+            select(Booking).where(Booking.event_id == event.id)
+        ).scalars().all()
+
+        for booking in bookings:
+            if booking.status != "CANCELLED":
+                booking.status = "CANCELLED"
+                cancelled_bookings += 1
+
+            links = db.execute(
+                select(BookingSeat).where(BookingSeat.booking_id == booking.id)
+            ).scalars().all()
+
+            for link in links:
+                seat = db.get(Seat, link.seat_id)
+                if seat and seat.status != "AVAILABLE":
+                    seat.status = "AVAILABLE"
+                    released_seats += 1
+
+            payments = db.execute(
+                select(Payment).where(Payment.booking_id == booking.id)
+            ).scalars().all()
+
+            for payment in payments:
+                if payment.status == "SUCCESS":
+                    payment.status = "REFUND_PENDING"
+                    refunds_pending += 1
+
+        if event.status != "CANCELLED":
+            event.status = "CANCELLED"
+            cancelled_events += 1
+
+    db.commit()
+
+    background_tasks.add_task(
+        send_event_notification_email,
+        current_user.email,
+        current_user.name,
+        "All events cancelled",
+        f"{cancelled_events} events",
+        "TicketFlow",
+        datetime.now(timezone.utc).isoformat(),
+    )
+
+    return {
+        "message": "All events cancelled and active bookings released",
+        "cancelled_events": cancelled_events,
+        "cancelled_bookings": cancelled_bookings,
+        "released_seats": released_seats,
+        "refunds_pending": refunds_pending,
+    }
+
+
 @router.delete("/{event_id}")
 def delete_event(
     event_id: int,

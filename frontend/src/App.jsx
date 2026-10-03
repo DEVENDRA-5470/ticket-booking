@@ -85,13 +85,19 @@ export default function App() {
 }
 
 function PublicEvents({onLogin}) {
-  const [events,setEvents]=useState([]),[loading,setLoading]=useState(true)
-  useEffect(()=>{let active=true;api('/v1/events/').then(d=>{if(active)setEvents(Array.isArray(d)?d:[])}).catch(()=>{if(active)setEvents([])}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[])
-  return <section className="section" id="events"><div className="heading"><div><span className="kicker">EVENTS</span><h2>Discover upcoming events.</h2></div><button className="view" onClick={onLogin}>Sign in to manage <ArrowRight size={16}/></button></div>
-    {loading?<div className="state">Loading events…</div>:events.length?<div className="grid">{events.map(e=><EventCard key={e.id} event={e}/>)}</div>:<div className="empty"><CalendarDays size={28}/><b>No events available yet.</b><span>Sign in and create the first event.</span><button className="primaryCta small" onClick={onLogin}>Sign in</button></div>}
+  return <section className="section" id="events">
+    <div className="heading">
+      <div><span className="kicker">EVENTS</span><h2>Your event workspace starts here.</h2></div>
+      <button className="view" onClick={onLogin}>Sign in to manage <ArrowRight size={16}/></button>
+    </div>
+    <div className="empty managerEmpty">
+      <ShieldCheck size={30}/>
+      <b>Authentication required</b>
+      <span>Sign in to view and manage events through the protected API.</span>
+      <button className="primaryCta small" onClick={onLogin}>Sign in</button>
+    </div>
   </section>
 }
-
 function EventManager({token,user,onUnauthorized}) {
   const [events,setEvents]=useState([]),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[notice,setNotice]=useState(''),[error,setError]=useState(''),[editing,setEditing]=useState(null),[showForm,setShowForm]=useState(false),[search,setSearch]=useState('')
   const loadEvents=async()=>{setLoading(true);try{const d=await api('/v1/events/',{},token);setEvents(Array.isArray(d)?d:[])}catch(e){if(e.status===401)onUnauthorized();else setError(e.message)}finally{setLoading(false)}}

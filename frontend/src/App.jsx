@@ -73,14 +73,68 @@ export default function App() {
         </div><div className="availability"><span>● Backend connected</span><b>Secure</b></div></div>
       </section>
 
-      {token ? <><EventManager token={token} user={user} onUnauthorized={logout}/><BookingLab token={token} onUnauthorized={logout}/></> : <PublicEvents onLogin={()=>setAuthMode('login')}/>}
-      <section className="trust"><div><ShieldCheck/><b>Protected routes</b><span>Business APIs require a valid bearer token.</span></div><div><CheckCircle2/><b>Persistent events</b><span>Events are read and written through PostgreSQL.</span></div><div><Users/><b>Account-based workflow</b><span>Register once and manage your platform session.</span></div></section>
+      {token ? <Dashboard token={token} user={user} onUnauthorized={logout}/> : <PublicEvents onLogin={()=>setAuthMode('login')}/>}
+      {!token && <section className="trust"><div><ShieldCheck/><b>Protected routes</b><span>Business APIs require a valid bearer token.</span></div><div><CheckCircle2/><b>Persistent events</b><span>Events are read and written through PostgreSQL.</span></div><div><Users/><b>Account-based workflow</b><span>Register once and manage your platform session.</span></div></section>}
       <section className="section how" id="how"><div className="heading"><div><span className="kicker">HOW IT WORKS</span><h2>Simple workflow, real API calls.</h2></div></div>
         <div className="steps"><Step n="01" icon={<UserPlus/>} title="Register or sign in" text="Create an account or authenticate with your existing credentials."/><Step n="02" icon={<CalendarDays/>} title="Manage events" text="Create, update, list and delete events from the dedicated event section."/><Step n="03" icon={<CheckCircle2/>} title="Receive notifications" text="Event creation triggers the configured email notification workflow."/></div>
       </section>
     </main>
     <footer><div className="brand"><i><Ticket size={17}/></i>Ticket<span>Flow</span></div><span>Ticket booking platform · Authenticated event management</span></footer>
     {authMode && <AuthModal mode={authMode} close={()=>setAuthMode(null)} onAuthenticated={authenticated} switchMode={()=>setAuthMode(authMode==='login'?'register':'login')}/>}
+  </div>
+}
+
+function Dashboard({token,user,onUnauthorized}) {
+  const [section,setSection]=useState('overview')
+  const [events,setEvents]=useState([])
+  const [bookings,setBookings]=useState([])
+  const [notifications,setNotifications]=useState([])
+  const [loading,setLoading]=useState(true)
+
+  useEffect(()=>{
+    let mounted=true
+    Promise.all([api('/v1/events/',{},token),api('/v1/bookings/',{},token),api('/v1/notifications/',{},token)])
+      .then(([e,b,n])=>{if(mounted){setEvents(Array.isArray(e)?e:[]);setBookings(Array.isArray(b)?b:[]);setNotifications(Array.isArray(n)?n:[])}})
+      .catch(e=>{if(e.status===401)onUnauthorized()})
+      .finally(()=>{if(mounted)setLoading(false)})
+    return()=>{mounted=false}
+  },[token])
+
+  const activeBookings=bookings.filter(b=>b.status==='CONFIRMED').length
+  const cancelledBookings=bookings.filter(b=>b.status==='CANCELLED').length
+  const unread=notifications.filter(n=>n.status!=='READ').length
+
+  return <section className="dashboardShell">
+    <aside className="dashboardSide">
+      <div className="dashIdentity"><div className="avatar">{(user?.name||user?.email||'U').slice(0,1).toUpperCase()}</div><div><b>{user?.name||'User'}</b><span>{user?.email}</span></div></div>
+      <div className="sideLabel">WORKSPACE</div>
+      <button className={section==='overview'?'sideItem active':'sideItem'} onClick={()=>setSection('overview')}><ShieldCheck size={17}/> Overview</button>
+      <button className={section==='events'?'sideItem active':'sideItem'} onClick={()=>setSection('events')}><CalendarDays size={17}/> Events</button>
+      <button className={section==='bookings'?'sideItem active':'sideItem'} onClick={()=>setSection('bookings')}><Ticket size={17}/> Booking Lab</button>
+      <button className={section==='notifications'?'sideItem active':'sideItem'} onClick={()=>setSection('notifications')}><CheckCircle2 size={17}/> Notifications{unread>0&&<em>{unread}</em>}</button>
+      <div className="sideBottom"><span>TicketFlow</span><small>Modular monolith workspace</small></div>
+    </aside>
+    <main className="dashboardMain">
+      <div className="dashboardHeader"><div><span className="kicker">TICKETFLOW DASHBOARD</span><h2>{section==='overview'?'Good to see you.':section==='events'?'Event management':section==='bookings'?'Booking & transaction lab':'Notifications'}</h2><p>{section==='overview'?'A focused command center for your ticketing workflow.':section==='events'?'Create, update, bulk-generate and cancel events.':section==='bookings'?'Run ticket, food, payment and cancellation workflows.':'Track platform activity and workflow notifications.'}</p></div><span className="statusPill"><i/> API connected</span></div>
+      {section==='overview'&&<div className="dashboardOverview">
+        <div className="dashStat"><span>Events</span><b>{loading?'—':events.length}</b><small>Total event records</small></div>
+        <div className="dashStat"><span>Active bookings</span><b>{loading?'—':activeBookings}</b><small>Currently confirmed</small></div>
+        <div className="dashStat"><span>Cancelled</span><b>{loading?'—':cancelledBookings}</b><small>Booking records</small></div>
+        <div className="dashStat"><span>Notifications</span><b>{loading?'—':unread}</b><small>Needs attention</small></div>
+        <div className="dashWelcome"><div><span className="kicker">WORKFLOW</span><h3>Run the platform from sections, not one long page.</h3><p>Use Events for event data, Booking Lab for transactional testing, and Notifications for system activity.</p></div><button className="primaryCta" onClick={()=>setSection('events')}>Manage events <ArrowRight size={16}/></button></div>
+        <div className="quickGrid"><button onClick={()=>setSection('events')}><CalendarDays/><b>Events</b><span>Manage your event inventory</span></button><button onClick={()=>setSection('bookings')}><Ticket/><b>Bookings & Payments</b><span>Test the full booking workflow</span></button><button onClick={()=>setSection('notifications')}><CheckCircle2/><b>Notifications</b><span>Review workflow activity</span></button></div>
+      </div>}
+      {section==='events'&&<EventManager token={token} user={user} onUnauthorized={onUnauthorized}/>}
+      {section==='bookings'&&<BookingLab token={token} onUnauthorized={onUnauthorized}/>}
+      {section==='notifications'&&<NotificationSection notifications={notifications}/>}
+    </main>
+  </section>
+}
+
+function NotificationSection({notifications}) {
+  return <div className="dashboardPanel">
+    <div className="panelIntro"><div><span className="kicker">ACTIVITY</span><h3>Recent notifications</h3><p>Booking, food, payment and cancellation events appear here.</p></div></div>
+    {notifications.length?<div className="dashboardNotifications">{notifications.map(n=><div className="dashboardNotification" key={n.id}><div className="notifIcon"><CheckCircle2 size={17}/></div><div><b>{n.status}</b><p>{n.message}</p></div></div>)}</div>:<div className="dashboardEmpty"><CheckCircle2 size={28}/><b>No notifications yet</b><span>Workflow activity will appear here.</span></div>}
   </div>
 }
 

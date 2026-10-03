@@ -30,7 +30,8 @@ def create_payment(booking_id: int, db: Session = Depends(get_db), current_user:
     amount = (len(seat_count) * 500.0) + food_total
     payment = Payment(booking_id=booking.id, amount=amount, status="PENDING", provider_reference=f"SIM-{uuid4().hex[:12].upper()}")
     db.add(payment)
-    db.add(Notification(user_id=current_user.id, channel="IN_APP", message=f"Payment #{payment.id if payment.id else 'pending'} created for booking {booking.reference}", status="PENDING"))
+    db.flush()
+    db.add(Notification(user_id=current_user.id, channel="IN_APP", message=f"Payment #{payment.id} created for booking {booking.reference}", status="PENDING"))
     db.commit(); db.refresh(payment)
     return payment
 

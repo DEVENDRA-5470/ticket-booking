@@ -120,9 +120,9 @@ def create_food_order(
 def create_bulk_food_orders(
     booking_id: int,
     food_item_id: int,
+    background_tasks: BackgroundTasks,
     quantity: int = 1,
     count: int = 10,
-    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

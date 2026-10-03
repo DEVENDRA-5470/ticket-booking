@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -6,6 +6,7 @@ from app.core.security import create_access_token, hash_password, verify_passwor
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse
+from app.services.email import send_welcome_email
 
 
 router = APIRouter()
@@ -18,6 +19,7 @@ router = APIRouter()
 )
 def register(
     payload: RegisterRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     existing_user = db.scalar(
@@ -39,6 +41,12 @@ def register(
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    background_tasks.add_task(
+        send_welcome_email,
+        user.email,
+        user.name,
+    )
 
     return TokenResponse(
         access_token=create_access_token(user),

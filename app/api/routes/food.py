@@ -7,6 +7,7 @@ from app.core.security import get_current_user
 from app.db.session import get_db
 from app.models.food import FoodItem, FoodOrder, FoodOrderItem
 from app.models.booking import Booking
+from app.models.payment import Payment
 from app.models.user import User
 from app.services.email import send_notification_email
 
@@ -221,13 +222,19 @@ def list_my_food_orders(
             .order_by(Notification.id.desc())
         ).scalars().first()
 
+        payment = db.execute(
+            select(Payment)
+            .where(Payment.booking_id == booking.id)
+            .order_by(Payment.id.desc())
+        ).scalars().first()
+
         result.append({
             "order_id": order.id,
             "booking_id": booking.id,
             "booking_reference": booking.reference,
             "email": user.email,
             "amount": total,
-            "payment_status": "NOT_PAID",
+            "payment_status": payment.status if payment else "NOT_PAID",
             "order_status": order.status,
             "notification_status": notification.status if notification else "PENDING",
         })

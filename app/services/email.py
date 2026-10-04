@@ -249,3 +249,15 @@ Regards,
         ]) + '<p style="font-size:13px;line-height:1.6;color:#596575;margin-top:18px;">Your reservation is confirmed. You can review the complete order, payment and food details from your TicketFlow account.</p>',
     )
     _send_email(recipient_email, f"Booking confirmed | {reference} | {event_name}", text, html)
+
+
+def send_final_order_confirmation_email(recipient_email, recipient_name, order):
+    seats = ", ".join(order["seats"]) or "—"
+    food_lines = "\n".join(f'{x["name"]} × {x["quantity"]}    ₹{x["line_total"]:.2f}' for x in order["food_items"]) or "No food ordered"
+    text = f"""Hello {recipient_name},\n\nYour payment has been successfully completed and your reservation is now fully confirmed.\n\nBOOKING DETAILS\nBooking Reference: {order["reference"]}\nEvent: {order["event_name"]}\nVenue: {order["venue"]}\nDate & Time: {order["starts_at"]}\nBooking Status: {order["status"]}\n\nSEATS\n{seats}\n\nTICKET SUMMARY\nTicket total: ₹{order["ticket_total"]:.2f}\n\nFOOD ORDERS\n{food_lines}\nFood total: ₹{order["food_total"]:.2f}\n\nPAYMENT\nPayment ID: #{order["payment_id"]}\nPayment Status: {order["payment_status"]}\nPayment Amount: ₹{order["payment_amount"]:.2f}\nPayment Reference: {order["payment_reference"]}\n\nORDER TOTAL\nTickets: ₹{order["ticket_total"]:.2f}\nFood: ₹{order["food_total"]:.2f}\nGrand Total: ₹{order["grand_total"]:.2f}\n\nYour booking is completely confirmed. Please keep this email as your booking receipt and reference.\n\nRegards,\n{settings.app_name} Customer Experience Team\n"""
+    food_html = "".join(f'<tr><td style="padding:10px;border-bottom:1px solid #edf0f3;font-size:12px;">{escape(x["name"])} × {x["quantity"]}</td><td align="right" style="padding:10px;border-bottom:1px solid #edf0f3;font-size:12px;font-weight:600;">₹{x["line_total"]:.2f}</td></tr>' for x in order["food_items"])
+    if not food_html: food_html = '<tr><td colspan="2" style="padding:10px;color:#7a8492;font-size:12px;">No food ordered</td></tr>'
+    content = _details_table([("Booking reference",order["reference"]),("Event",order["event_name"]),("Venue",order["venue"]),("Date & time",order["starts_at"]),("Booking status",order["status"]),("Seats",seats),("Ticket total",f'₹{order["ticket_total"]:.2f}'),("Food total",f'₹{order["food_total"]:.2f}'),("Payment",order["payment_status"]),("Payment reference",order["payment_reference"]),("Grand total",f'₹{order["grand_total"]:.2f}')])
+    content += f'<h3 style="font-size:16px;margin:24px 0 10px;">Food orders</h3><table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e6e9ee;border-radius:10px;overflow:hidden;">{food_html}</table>'
+    html = _layout(recipient_name,"Payment successful — booking confirmed","FINAL BOOKING CONFIRMATION",content)
+    _send_email(recipient_email,f"Payment successful | {order["reference"]} | {order["event_name"]}",text,html)

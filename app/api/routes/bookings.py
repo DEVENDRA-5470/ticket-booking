@@ -10,7 +10,9 @@ from app.models.event import Event
 from app.models.seat import Seat
 from app.models.user import User
 from app.models.notification import Notification
-from app.services.email import send_notification_email
+from app.models.food import FoodOrder, FoodOrderItem, FoodItem
+from app.models.payment import Payment
+from app.services.email import send_booking_confirmation_email, send_notification_email
 
 router = APIRouter()
 
@@ -72,11 +74,10 @@ def create_booking(
     db.refresh(booking)
 
     background_tasks.add_task(
-        send_notification_email,
-        current_user.email,
-        current_user.name,
-        message,
-        "Booking Confirmed",
+        send_booking_confirmation_email,
+        current_user.email, current_user.name, booking.reference,
+        event.name, event.venue, event.starts_at.isoformat(),
+        [seat.seat_number for seat in seats], len(seats) * 500,
     )
 
     return {
@@ -158,6 +159,39 @@ def create_bulk_bookings(
         "failed": count - len(created),
         "bookings": created,
     }
+
+
+@router.get("/orders")
+def my_orders(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    bookings = db.execute(select(Booking).where(Booking.user_id == current_user.id).order_by(Booking.created_at.desc())).scalars().all()
+    result = []
+    for booking in bookings:
+        event = db.get(Event, booking.event_id)
+        seats = db.execute(select(Seat).join(BookingSeat, BookingSeat.seat_id == Seat.id).where(BookingSeat.booking_id == booking.id).order_by(Seat.seat_number)).scalars().all()
+        payments = db.execute(select(Payment).where(Payment.booking_id == booking.id).order_by(Payment.id.desc())).scalars().all()
+        food_orders = db.execute(select(FoodOrder).where(FoodOrder.booking_id == booking.id).order_by(FoodOrder.id.desc())).scalars().all()
+        food = []
+        for order in food_orders:
+            items = db.execute(select(FoodOrderItem, FoodItem).join(FoodItem, FoodItem.id == FoodOrderItem.food_item_id).where(FoodOrderItem.food_order_id == order.id)).all()
+            food.append({
+                "order_id": order.id, "status": order.status,
+                "items": [{"name": item.name, "quantity": row.quantity, "unit_price": float(item.price), "line_total": round(float(item.price) * row.quantity, 2)} for row, item in items],
+                "total": round(sum(float(item.price) * row.quantity for row, item in items), 2),
+            })
+        result.append({
+            "booking_id": booking.id, "reference": booking.reference, "status": booking.status,
+            "created_at": booking.created_at.isoformat() if booking.created_at else None,
+            "event": {"id": event.id, "name": event.name, "venue": event.venue, "starts_at": event.starts_at.isoformat(), "status": event.status} if event else None,
+            "seats": [{"id": s.id, "number": s.seat_number, "status": s.status} for s in seats],
+            "ticket_amount": round(len(seats) * 500, 2),
+            "payments": [{"id": p.id, "amount": float(p.amount), "status": p.status, "provider_reference": p.provider_reference} for p in payments],
+            "food_orders": food,
+            "food_total": round(sum(x["total"] for x in food if x["status"] != "CANCELLED"), 2),
+        })
+    return result
 
 
 @router.get("/")

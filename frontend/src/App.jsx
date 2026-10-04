@@ -350,9 +350,47 @@ function MyBookings({bookings,token,onChanged,onUnauthorized}) {
     {bookings.length?<div className="bookingCards">{bookings.map(b=><article className="bookingCard" key={b.id}>
       <div className="bookingCardMain"><div className="bookingRef"><Ticket size={16}/><b>{b.reference}</b></div><span className={'statusPill '+b.status.toLowerCase()}>{b.status}</span></div>
       <div className="bookingCardMeta"><span>Event #{b.event_id}</span><span>Booking #{b.id}</span></div>
-      {b.status==='CONFIRMED'&&<div className="bookingCardAction bookingActions"><button className="dangerCta" disabled={cancelling===b.id} onClick={()=>cancel(b)}>{cancelling===b.id?'Cancelling…':'Cancel booking'}</button><FoodOrderPanel booking={b} token={token} onUnauthorized={onUnauthorized}/></div>}
+      {b.status==='CONFIRMED'&&<div className="bookingCardAction bookingActions"><PaymentPanel booking={b} token={token} onUnauthorized={onUnauthorized}/><button className="dangerCta" disabled={cancelling===b.id} onClick={()=>cancel(b)}>{cancelling===b.id?'Cancelling…':'Cancel booking'}</button><FoodOrderPanel booking={b} token={token} onUnauthorized={onUnauthorized}/></div>}
     </article>)}</div>:<div className="dashboardEmpty"><Ticket size={30}/><b>No bookings yet</b><span>Your confirmed reservations will appear here.</span></div>}
   </div>
+}
+
+function PaymentPanel({booking,token,onUnauthorized}) {
+  const [open,setOpen]=useState(false)
+  const [loading,setLoading]=useState(false)
+  const [message,setMessage]=useState('')
+
+  const pay=async(result)=>{
+    setLoading(true);setMessage('')
+    try {
+      const data=await api('/v1/payments/simulate/'+booking.id+'?result='+result,{method:'POST'},token)
+      setMessage(result==='success'
+        ? `Payment successful · ₹${Number(data.payment.amount).toFixed(2)}`
+        : `Payment failed · ₹${Number(data.payment.amount).toFixed(2)}`)
+    } catch(e) {
+      setMessage(e.message)
+      if(e.status===401)onUnauthorized()
+    } finally {setLoading(false)}
+  }
+
+  return <>
+    <button className="paymentButton" onClick={()=>setOpen(true)}>Pay now <ArrowRight size={13}/></button>
+    {open&&<div className="backdrop" onClick={()=>setOpen(false)}>
+      <div className="modal paymentModal" onClick={e=>e.stopPropagation()}>
+        <button className="close" onClick={()=>setOpen(false)}><X/></button>
+        <div className="paymentHero"><span className="kicker">SECURE CHECKOUT · DEMO</span><h2>Complete payment</h2><p>Dummy payment simulation for this booking.</p></div>
+        <div className="paymentBody">
+          <div className="paymentBooking"><span>Booking</span><b>{booking.reference}</b></div>
+          <p className="paymentHint">Choose an outcome to test the payment lifecycle.</p>
+          <div className="paymentChoices">
+            <button className="paymentSuccess" disabled={loading} onClick={()=>pay('success')}>✓ Simulate successful payment</button>
+            <button className="paymentFailed" disabled={loading} onClick={()=>pay('failed')}>× Simulate failed payment</button>
+          </div>
+          {message&&<div className="foodMessage">{message}</div>}
+        </div>
+      </div>
+    </div>}
+  </>
 }
 
 function FoodOrderPanel({booking,token,onUnauthorized}) {

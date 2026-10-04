@@ -51,7 +51,8 @@ export default function App() {
     const u = {
       user_id:data.user_id,
       email:data.email,
-      name:data.name || data.email.split('@')[0]
+      name:data.name || data.email.split('@')[0],
+      role:data.role || 'CUSTOMER'
     }
     localStorage.setItem('ticketflow_token',data.access_token)
     localStorage.setItem('ticketflow_user',JSON.stringify(u))
@@ -171,6 +172,7 @@ function CustomerApp({token,user,onUnauthorized,onLogout}) {
   const [notifications,setNotifications]=useState([])
   const [loading,setLoading]=useState(true)
   const [refreshing,setRefreshing]=useState(false)
+  const isAdmin = user?.role === 'ADMIN'
 
   const load=async(showSpinner=false)=>{
     if(showSpinner)setRefreshing(true)
@@ -226,6 +228,7 @@ function CustomerApp({token,user,onUnauthorized,onLogout}) {
       <button className={section==='overview'?'sideItem active':'sideItem'} onClick={()=>setSection('overview')}><ShieldCheck size={17}/> Overview</button>
       <button className={section==='events'?'sideItem active':'sideItem'} onClick={()=>setSection('events')}><CalendarDays size={17}/> Discover events</button>
       <button className={section==='bookings'?'sideItem active':'sideItem'} onClick={()=>setSection('bookings')}><Ticket size={17}/> My orders</button>
+      {isAdmin&&<button className={section==='global-bookings'?'sideItem active':'sideItem'} onClick={()=>setSection('global-bookings')}><Users size={17}/> All bookings</button>}
       <button className={section==='food'?'sideItem active':'sideItem'} onClick={()=>setSection('food')}><span>🍽️</span> Food orders</button>
       <button className={section==='notifications'?'sideItem active':'sideItem'} onClick={()=>setSection('notifications')}><Bell size={17}/><span>Notifications</span>{unread>0&&<em>{unread}</em>}</button>
       <div className="sideBottom"><div className="sideHealth"><i/> Platform operational</div><small>Customer workspace</small></div>
@@ -233,7 +236,7 @@ function CustomerApp({token,user,onUnauthorized,onLogout}) {
 
     <main className="customerMain">
       <div className="customerTopbar">
-        <div className="breadcrumb"><span>Account</span><ChevronRight size={13}/><b>{section==='overview'?'Overview':section==='events'?'Discover events':section==='bookings'?'My orders':section==='food'?'Food orders':'Notifications'}</b></div>
+        <div className="breadcrumb"><span>Account</span><ChevronRight size={13}/><b>{section==='overview'?'Overview':section==='events'?'Discover events':section==='bookings'?'My orders':section==='global-bookings'?'All bookings':section==='food'?'Food orders':'Notifications'}</b></div>
         <div className="topbarActions">
           <span className="syncLabel"><i/> Live sync</span>
           <button className="iconButton" title="Refresh" onClick={()=>load(true)} disabled={refreshing}><RefreshCw size={16} className={refreshing?'spin':''}/></button>
@@ -244,6 +247,7 @@ function CustomerApp({token,user,onUnauthorized,onLogout}) {
       {section==='overview'&&<CustomerOverview user={user} loading={loading} active={active} cancelled={cancelled} unread={unread} onNavigate={setSection} bookings={bookings}/>}
       {section==='events'&&<AuthenticatedEvents events={events} onRefresh={load}/>}
       {section==='bookings'&&<MyBookings bookings={bookings} token={token} onChanged={load} onUnauthorized={onUnauthorized}/>}
+      {section==='global-bookings'&&isAdmin&&<GlobalBookings token={token} onUnauthorized={onUnauthorized}/>}
       {section==='food'&&<FoodOrdersPanel token={token} onUnauthorized={onUnauthorized}/>} 
       {section==='notifications'&&<NotificationCenter notifications={notifications} onMarkRead={markRead} onMarkAllRead={markAllRead}/>}
     </main>
@@ -356,6 +360,101 @@ function MyBookings({bookings,token,onChanged,onUnauthorized}) {
     {order.status==='CONFIRMED'&&<div className="fullOrderActions"><PaymentPanel booking={{id:order.booking_id,reference:order.reference}} token={token} onUnauthorized={onUnauthorized}/><FoodOrderPanel booking={{id:order.booking_id,reference:order.reference}} token={token} onUnauthorized={onUnauthorized}/><button className="dangerCta" disabled={cancelling===order.booking_id} onClick={()=>cancel(order)}>{cancelling===order.booking_id?'Cancelling…':'Cancel booking'}</button></div>}
   </article>)}</div>:<div className="dashboardEmpty"><Ticket size={30}/><b>No orders yet</b><span>Your complete reservations will appear here.</span></div>}</div>
 }
+function GlobalBookings({token,onUnauthorized}) {
+  const [items,setItems]=useState([])
+  const [total,setTotal]=useState(0)
+  const [loading,setLoading]=useState(true)
+  const [refreshing,setRefreshing]=useState(false)
+  const [search,setSearch]=useState('')
+  const [status,setStatus]=useState('ALL')
+  const [error,setError]=useState('')
+
+  const load=async()=>{
+    setRefreshing(true)
+    setError('')
+    try {
+      const params=new URLSearchParams({limit:'200',offset:'0'})
+      if(status!=='ALL')params.set('status_filter',status)
+      if(search.trim())params.set('search',search.trim())
+      const data=await api('/v1/bookings/global?'+params.toString(),{},token)
+      setItems(Array.isArray(data?.items)?data.items:[])
+      setTotal(Number(data?.total||0))
+    }catch(e){
+      setError(e.message)
+      if(e.status===401)onUnauthorized()
+    }finally{
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }
+
+  useEffect(()=>{load()},[token,status])
+
+  useEffect(()=>{
+    const timer=setTimeout(()=>{
+      if(!loading)load()
+    },350)
+    return()=>clearTimeout(timer)
+  },[search])
+
+  const confirmed=items.filter(x=>x.status==='CONFIRMED').length
+  const cancelled=items.filter(x=>x.status==='CANCELLED').length
+  const paid=items.filter(x=>x.payments?.some(p=>p.status==='SUCCESS')).length
+  const foodOrders=items.reduce((sum,x)=>sum+Number(x.food_order_count||0),0)
+
+  return <div>
+    <div className="customerHeader">
+      <div>
+        <span className="kicker">OPERATIONS / GLOBAL BOOKINGS</span>
+        <h2>All bookings.</h2>
+        <p>Global operational view of every customer reservation, event, seat, payment and food activity.</p>
+      </div>
+      <button className="secondaryCta" onClick={load} disabled={refreshing}><RefreshCw size={14} className={refreshing?'spin':''}/> Refresh</button>
+    </div>
+
+    <div className="customerStats globalBookingStats">
+      <Stat label="Total bookings" value={total} note="All customers" icon={<Ticket size={16}/>}/>
+      <Stat label="Confirmed" value={confirmed} note="Current reservations" icon={<CheckCircle2 size={16}/>}/>
+      <Stat label="Cancelled" value={cancelled} note="Booking history" icon={<Clock3 size={16}/>}/>
+      <Stat label="Paid bookings" value={paid} note="Successful payments" icon={<ShieldCheck size={16}/>}/>
+    </div>
+
+    <div className="globalBookingToolbar">
+      <div className="search compact"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search customer, email, booking or event"/></div>
+      <select value={status} onChange={e=>setStatus(e.target.value)}>
+        <option value="ALL">All statuses</option>
+        <option value="CONFIRMED">Confirmed</option>
+        <option value="CANCELLED">Cancelled</option>
+      </select>
+      <span>{items.length} shown · {foodOrders} food orders</span>
+    </div>
+
+    {error&&<div className="formError">{error}</div>}
+
+    {loading?<div className="dashboardEmpty">Loading global bookings…</div>:
+      items.length?<div className="globalBookingTableWrap">
+        <table className="globalBookingTable">
+          <thead><tr>
+            <th>Booking</th><th>Customer</th><th>Event</th><th>Seats</th><th>Amount</th><th>Payment</th><th>Status</th>
+          </tr></thead>
+          <tbody>{items.map(item=>{
+            const payment=item.payments?.[0]
+            const amount=Number(item.ticket_amount||0)+Number(item.food_total||0)
+            return <tr key={item.booking_id}>
+              <td><div className="globalBookingRef"><b>{item.reference}</b><small>#{item.booking_id} · {formatDate(item.created_at)}</small></div></td>
+              <td><div className="globalCustomer"><b>{item.customer?.name||'—'}</b><span>{item.customer?.email||'—'}</span></div></td>
+              <td><div className="globalEvent"><b>{item.event?.name||'—'}</b><span>{item.event?.venue||'—'}</span></div></td>
+              <td><div className="globalSeatList">{item.seats?.map(s=><span key={s.id}>{s.number}</span>)}</div></td>
+              <td><div className="globalAmount"><b>₹{amount.toFixed(2)}</b><span>Ticket ₹{Number(item.ticket_amount||0).toFixed(0)} · Food ₹{Number(item.food_total||0).toFixed(0)}</span></div></td>
+              <td><span className={'globalPayment '+((payment?.status||'NOT PAID').toLowerCase())}>{(payment?.status||'NOT PAID').replaceAll('_',' ')}</span></td>
+              <td><span className={'statusPill '+item.status.toLowerCase()}>{item.status}</span></td>
+            </tr>
+          })}</tbody>
+        </table>
+      </div>:<div className="dashboardEmpty"><Ticket size={30}/><b>No bookings found</b><span>Try another search or status filter.</span></div>}
+  </div>
+}
+
 function FoodOrdersPanel({token,onUnauthorized}) {
   const [orders,setOrders]=useState([])
   const [loading,setLoading]=useState(true)

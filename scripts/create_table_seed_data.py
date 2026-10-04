@@ -6,10 +6,10 @@ Run inside the backend container:
 
     PYTHONPATH=/app python /app/scripts/create_table_seed_data.py
 
-This script is idempotent:
+The script is idempotent:
+- Existing tables are preserved.
 - Existing events are not duplicated.
 - Existing food items are not duplicated.
-- Existing tables are left unchanged.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -17,16 +17,12 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
-from app.db.base import Base
-from app.db.session import SessionLocal, engine
+from app.db.session import Base, SessionLocal, engine
+from app import models  # noqa: F401 - register all models with Base.metadata
 
-from app.models.booking import Booking, BookingSeat
 from app.models.event import Event
-from app.models.food import FoodItem, FoodOrder, FoodOrderItem
-from app.models.notification import Notification
-from app.models.payment import Payment
+from app.models.food import FoodItem
 from app.models.seat import Seat
-from app.models.user import User
 
 
 FOOD_ITEMS = [
@@ -51,7 +47,6 @@ FOOD_ITEMS = [
     ("Mango Juice", Decimal("99.00")),
     ("Chocolate Brownie", Decimal("129.00")),
 ]
-
 
 EVENTS = [
     ("Rock Night Live", "Delhi Arena"),
@@ -86,10 +81,7 @@ def create_tables() -> None:
 def seed_events(db) -> None:
     print("Seeding events...")
 
-    existing_names = set(
-        db.execute(select(Event.name)).scalars().all()
-    )
-
+    existing_names = set(db.execute(select(Event.name)).scalars().all())
     created = 0
     skipped = 0
     now = datetime.now(timezone.utc)
@@ -124,17 +116,13 @@ def seed_events(db) -> None:
         created += 1
 
     db.commit()
-
     print(f"Events seed complete: created={created}, skipped={skipped}")
 
 
 def seed_food(db) -> None:
     print("Seeding food items...")
 
-    existing_names = set(
-        db.execute(select(FoodItem.name)).scalars().all()
-    )
-
+    existing_names = set(db.execute(select(FoodItem.name)).scalars().all())
     created = 0
     skipped = 0
 
@@ -153,7 +141,6 @@ def seed_food(db) -> None:
         created += 1
 
     db.commit()
-
     print(f"Food seed complete: created={created}, skipped={skipped}")
 
 

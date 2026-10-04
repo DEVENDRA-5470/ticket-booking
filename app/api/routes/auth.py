@@ -52,6 +52,8 @@ def register(
         access_token=create_access_token(user),
         user_id=user.id,
         email=user.email,
+        name=user.name,
+        role=user.role,
     )
 
 
@@ -78,4 +80,6 @@ def login(
         access_token=create_access_token(user),
         user_id=user.id,
         email=user.email,
+        name=user.name,
+        role=user.role,
     )

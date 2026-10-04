@@ -226,13 +226,14 @@ function CustomerApp({token,user,onUnauthorized,onLogout}) {
       <button className={section==='overview'?'sideItem active':'sideItem'} onClick={()=>setSection('overview')}><ShieldCheck size={17}/> Overview</button>
       <button className={section==='events'?'sideItem active':'sideItem'} onClick={()=>setSection('events')}><CalendarDays size={17}/> Discover events</button>
       <button className={section==='bookings'?'sideItem active':'sideItem'} onClick={()=>setSection('bookings')}><Ticket size={17}/> My bookings</button>
+      <button className={section==='food'?'sideItem active':'sideItem'} onClick={()=>setSection('food')}><span>🍽️</span> Food orders</button>
       <button className={section==='notifications'?'sideItem active':'sideItem'} onClick={()=>setSection('notifications')}><Bell size={17}/><span>Notifications</span>{unread>0&&<em>{unread}</em>}</button>
       <div className="sideBottom"><div className="sideHealth"><i/> Platform operational</div><small>Customer workspace</small></div>
     </aside>
 
     <main className="customerMain">
       <div className="customerTopbar">
-        <div className="breadcrumb"><span>Account</span><ChevronRight size={13}/><b>{section==='overview'?'Overview':section==='events'?'Discover events':section==='bookings'?'My bookings':'Notifications'}</b></div>
+        <div className="breadcrumb"><span>Account</span><ChevronRight size={13}/><b>{section==='overview'?'Overview':section==='events'?'Discover events':section==='bookings'?'My bookings':section==='food'?'Food orders':'Notifications'}</b></div>
         <div className="topbarActions">
           <span className="syncLabel"><i/> Live sync</span>
           <button className="iconButton" title="Refresh" onClick={()=>load(true)} disabled={refreshing}><RefreshCw size={16} className={refreshing?'spin':''}/></button>
@@ -243,6 +244,7 @@ function CustomerApp({token,user,onUnauthorized,onLogout}) {
       {section==='overview'&&<CustomerOverview user={user} loading={loading} active={active} cancelled={cancelled} unread={unread} onNavigate={setSection} bookings={bookings}/>}
       {section==='events'&&<AuthenticatedEvents events={events} onRefresh={load}/>}
       {section==='bookings'&&<MyBookings bookings={bookings} token={token} onChanged={load} onUnauthorized={onUnauthorized}/>}
+      {section==='food'&&<FoodOrdersPanel token={token} onUnauthorized={onUnauthorized}/>} 
       {section==='notifications'&&<NotificationCenter notifications={notifications} onMarkRead={markRead} onMarkAllRead={markAllRead}/>}
     </main>
   </section>
@@ -352,6 +354,54 @@ function MyBookings({bookings,token,onChanged,onUnauthorized}) {
       <div className="bookingCardMeta"><span>Event #{b.event_id}</span><span>Booking #{b.id}</span></div>
       {b.status==='CONFIRMED'&&<div className="bookingCardAction bookingActions"><PaymentPanel booking={b} token={token} onUnauthorized={onUnauthorized}/><button className="dangerCta" disabled={cancelling===b.id} onClick={()=>cancel(b)}>{cancelling===b.id?'Cancelling…':'Cancel booking'}</button><FoodOrderPanel booking={b} token={token} onUnauthorized={onUnauthorized}/></div>}
     </article>)}</div>:<div className="dashboardEmpty"><Ticket size={30}/><b>No bookings yet</b><span>Your confirmed reservations will appear here.</span></div>}
+  </div>
+}
+
+function FoodOrdersPanel({token,onUnauthorized}) {
+  const [orders,setOrders]=useState([])
+  const [loading,setLoading]=useState(true)
+  const [cancelling,setCancelling]=useState(null)
+  const [error,setError]=useState('')
+
+  const load=async()=>{
+    try {
+      const data=await api('/v1/food/orders',{},token)
+      setOrders(Array.isArray(data)?data:[])
+    } catch(e) {
+      setError(e.message)
+      if(e.status===401)onUnauthorized()
+    } finally {setLoading(false)}
+  }
+
+  useEffect(()=>{load()},[token])
+
+  const cancelOrder=async id=>{
+    if(!window.confirm('Cancel this food order now?'))return
+    setCancelling(id);setError('')
+    try { await api('/v1/food/orders/'+id+'/cancel',{method:'POST'},token); await load() }
+    catch(e){setError(e.message);if(e.status===401)onUnauthorized()}
+    finally{setCancelling(null)}
+  }
+
+  return <div>
+    <div className="customerHeader"><div><span className="kicker">FOOD ORDERS</span><h2>My food orders.</h2><p>Track your food orders, payment status and notifications.</p></div></div>
+    {error&&<div className="formError">{error}</div>}
+    {loading?<div className="dashboardEmpty"><span>Loading food orders…</span></div>:
+      orders.length?<div className="foodOrdersList">{orders.map(order=><article className="foodOrderCard" key={order.order_id}>
+        <div className="foodOrderCardTop">
+          <div><span className="kicker">ORDER</span><h3>#{order.order_id}</h3></div>
+          <span className={'statusPill '+order.order_status.toLowerCase()}>{order.order_status}</span>
+        </div>
+        <div className="foodOrderDetails">
+          <div><span>Email</span><b>{order.email}</b></div>
+          <div><span>Amount</span><b>₹{Number(order.amount).toFixed(2)}</b></div>
+          <div><span>Payment</span><b className={'orderStatus '+order.payment_status.toLowerCase()}>{order.payment_status.replaceAll('_',' ')}</b></div>
+          <div><span>Notification</span><b>{order.notification_status}</b></div>
+          <div><span>Booking</span><b>{order.booking_reference}</b></div>
+        </div>
+        {order.order_status!=='CANCELLED'&&<div className="foodOrderCardAction"><button className="dangerCta" disabled={cancelling===order.order_id} onClick={()=>cancelOrder(order.order_id)}>{cancelling===order.order_id?'Cancelling…':'Cancel order'}</button></div>}
+      </article>)}</div>:
+      <div className="dashboardEmpty"><b>No food orders yet</b><span>Food orders placed against your confirmed bookings will appear here.</span></div>}
   </div>
 }
 

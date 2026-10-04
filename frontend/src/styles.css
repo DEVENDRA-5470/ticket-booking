@@ -112,3 +112,23 @@
 @media(max-width:680px){
   .customerShell{display:block}.customerSide{width:100%;height:auto;position:static;padding:9px;display:flex;align-items:center;gap:2px;overflow:auto}.customerBrand,.customerIdentity,.customerSide .sideLabel,.customerSide .sideBottom{display:none}.customerSide .sideItem{min-width:max-content;margin:0;padding:8px 9px;justify-content:center;font-size:9px;display:flex}.customerSide .sideItem.active:before{display:none}.customerSide .sideItem em{position:absolute;margin:-22px 0 0 28px}.customerMain{padding:0 15px 35px}.customerTopbar{height:58px;margin-bottom:22px}.customerTopbar .syncLabel{display:none}.customerTopbar .topProfile>span:not(.miniAvatar){display:none}.customerHeader h2{font-size:26px}.customerStats{grid-template-columns:1fr 1fr}.customerWelcome{align-items:flex-start;flex-direction:column}.customerWelcome .secondaryCta{width:100%}.clientEventGrid,.eventSkeletonGrid{grid-template-columns:1fr}.customerToolbar{align-items:stretch;flex-direction:column}.customerToolbar .search{width:100%}.eventBookingModal{width:96vw}.eventDetailContent{padding:18px}.clientSeatGrid{grid-template-columns:repeat(6,1fr)}.notificationToolbar{gap:8px;align-items:stretch;flex-direction:column}.customerShell .notificationToolbar>*{width:100%}.customerShell .notifChannel{display:none}.customerShell .notifMeta button{padding:5px 6px}
 }
+
+
+
+/* Food ordering */
+.bookingActions{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap}
+.foodOrderArea{position:relative}
+.foodOrderButton{display:inline-flex;align-items:center;gap:6px;border:1px solid #ddd8ff;background:#f5f3ff;color:#5d4ee0;border-radius:8px;padding:8px 11px;font:700 10px 'DM Sans';cursor:pointer}
+.foodMenu{position:absolute;right:0;top:calc(100% + 8px);z-index:30;width:min(620px,80vw);background:#fff;border:1px solid #e0e3ea;border-radius:14px;padding:15px;box-shadow:0 18px 45px #1822381c}
+.foodMenuHeader{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
+.foodMenuHeader div{display:grid;gap:3px}.foodMenuHeader b{font-size:13px}.foodMenuHeader span{font-size:9px;color:#8b94a2}
+.foodMenuHeader>button{border:0;background:#f3f4f7;border-radius:7px;width:28px;height:28px;display:grid;place-items:center;color:#788292;cursor:pointer}
+.foodGrid{display:grid;grid-template-columns:1fr 1fr;gap:7px;max-height:300px;overflow:auto;padding:1px}
+.foodItem{border:1px solid #eceef3;border-radius:10px;padding:9px 10px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.foodItem>div:first-child{display:grid;gap:3px;min-width:0}.foodItem b{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.foodItem span{font-size:9px;color:#7e8795}
+.foodQty{display:flex;align-items:center;gap:6px;flex:none}.foodQty button{width:24px;height:24px;border:1px solid #dedfe6;background:#fff;border-radius:6px;color:#5d4ee0;font-weight:800;cursor:pointer}.foodQty button:disabled{opacity:.35;cursor:not-allowed}.foodQty b{min-width:12px;text-align:center;font-size:10px}
+.foodCheckout{border-top:1px solid #eceef2;margin-top:12px;padding-top:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;color:#6f7888;font-size:10px}
+.foodCheckout .primaryCta{padding:9px 12px;font-size:10px}
+.foodLoading{padding:35px;text-align:center;color:#8b94a2;font-size:10px}
+.foodMessage{margin-top:9px;padding:9px 10px;border-radius:8px;background:#edf8f3;color:#16855b;font-size:9px;font-weight:700}
+@media(max-width:680px){.foodMenu{position:fixed;left:3vw;right:3vw;bottom:10px;top:auto;width:auto;max-height:78vh}.foodGrid{grid-template-columns:1fr}.bookingActions{flex-direction:column}}

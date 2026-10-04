@@ -203,10 +203,7 @@ def global_bookings(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Return the global booking view for operational/admin users."""
-    if current_user.role != "ADMIN":
-        raise HTTPException(status_code=403, detail="Admin access required")
-
+    """Return the global booking view for all authenticated users."""
     query = (
         select(Booking)
         .join(User, User.id == Booking.user_id)

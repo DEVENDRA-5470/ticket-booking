@@ -192,12 +192,47 @@ def list_my_food_orders(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return db.execute(
-        select(FoodOrder)
+    rows = db.execute(
+        select(FoodOrder, Booking, User)
         .join(Booking, Booking.id == FoodOrder.booking_id)
+        .join(User, User.id == Booking.user_id)
         .where(Booking.user_id == current_user.id)
         .order_by(FoodOrder.id.desc())
-    ).scalars().all()
+    ).all()
+
+    result = []
+    for order, booking, user in rows:
+        items = db.execute(
+            select(FoodOrderItem).where(FoodOrderItem.food_order_id == order.id)
+        ).scalars().all()
+
+        total = 0.0
+        for item in items:
+            food = db.get(FoodItem, item.food_item_id)
+            if food:
+                total += float(food.price) * item.quantity
+
+        notification = db.execute(
+            select(Notification)
+            .where(
+                Notification.user_id == current_user.id,
+                Notification.message.like(f"%Food order #{order.id}%"),
+            )
+            .order_by(Notification.id.desc())
+        ).scalars().first()
+
+        result.append({
+            "order_id": order.id,
+            "booking_id": booking.id,
+            "booking_reference": booking.reference,
+            "email": user.email,
+            "amount": total,
+            "payment_status": "NOT_PAID",
+            "order_status": order.status,
+            "notification_status": notification.status if notification else "PENDING",
+        })
+
+    return result
 
 
 @router.post("/orders/{order_id}/cancel")

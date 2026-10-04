@@ -5,7 +5,7 @@ TicketFlow deployment script.
 Usage:
     python3 deploy/deploy.py
 
-Force deployment of the current commit:
+Force rebuild/restart even when the working tree is unchanged:
     FORCE_DEPLOY=1 python3 deploy/deploy.py
 
 Database bootstrap/seed is intentionally separate:
@@ -14,6 +14,7 @@ Database bootstrap/seed is intentionally separate:
 
 from __future__ import annotations
 
+import fcntl
 import os
 import subprocess
 import sys
@@ -83,7 +84,6 @@ def require_commands() -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-
         if result.returncode != 0:
             raise DeployError(f"{command} is not installed")
 
@@ -92,8 +92,6 @@ def require_commands() -> None:
 
 
 def acquire_lock():
-    import fcntl
-
     lock = LOCK_FILE.open("w")
 
     try:
@@ -105,60 +103,13 @@ def acquire_lock():
     return lock
 
 
-def rollback(previous_commit: str) -> None:
-    log("==========================================")
-    log("DEPLOYMENT FAILED")
-    log(f"Rolling back application code -> {previous_commit}")
-    log("==========================================")
-
-    try:
-        run(
-            ["git", "reset", "--hard", previous_commit],
-            cwd=APP_DIR,
-        )
-
-        run(
-            [
-                "docker",
-                "compose",
-                "up",
-                "-d",
-                "--build",
-                "--remove-orphans",
-            ],
-            cwd=APP_DIR,
-            check=False,
-        )
-
-        log("Application rollback completed.")
-
-    except Exception as exc:
-        log(f"Rollback failed: {exc}")
-
-
-def clone_repository() -> None:
-    if (APP_DIR / ".git").exists():
-        return
-
-    if APP_DIR.exists() and any(APP_DIR.iterdir()):
-        raise DeployError(
-            f"{APP_DIR} exists but is not a Git repository"
-        )
-
-    log("Repository not found. Cloning repository...")
-
-    APP_DIR.parent.mkdir(parents=True, exist_ok=True)
-
-    run(
-        [
-            "git",
-            "clone",
-            "--branch",
-            BRANCH,
-            REPO_URL,
-            str(APP_DIR),
-        ]
+def compose_project_ready() -> bool:
+    required = (
+        APP_DIR / "docker-compose.yml",
+        APP_DIR / "Dockerfile",
+        APP_DIR / ".env",
     )
+    return all(path.exists() for path in required)
 
 
 def wait_for_backend() -> None:
@@ -191,7 +142,6 @@ def wait_for_backend() -> None:
         ["docker", "logs", "--tail", "100", "ticketing-backend"],
         check=False,
     )
-
     raise DeployError("Backend failed to start")
 
 
@@ -224,7 +174,6 @@ def health_check() -> None:
         ["docker", "logs", "--tail", "100", "ticketing-backend"],
         check=False,
     )
-
     run(
         ["docker", "compose", "ps"],
         cwd=APP_DIR,
@@ -234,19 +183,27 @@ def health_check() -> None:
     raise DeployError("Application health check failed")
 
 
-def deploy() -> None:
-    APP_DIR.mkdir(parents=True, exist_ok=True)
-    LOG_FILE.touch(exist_ok=True)
+def sync_repository() -> None:
+    if not (APP_DIR / ".git").exists():
+        if APP_DIR.exists() and any(APP_DIR.iterdir()):
+            raise DeployError(
+                f"{APP_DIR} exists but is not a Git repository"
+            )
 
-    require_commands()
-    clone_repository()
+        log("Repository not found. Cloning repository...")
+        APP_DIR.parent.mkdir(parents=True, exist_ok=True)
 
-    if not (APP_DIR / ".env").exists():
-        raise DeployError(
-            f".env not found: {APP_DIR / '.env'}"
+        run(
+            [
+                "git",
+                "clone",
+                "--branch",
+                BRANCH,
+                REPO_URL,
+                str(APP_DIR),
+            ]
         )
-
-    os.chdir(APP_DIR)
+        return
 
     run(
         ["git", "remote", "set-url", "origin", REPO_URL],
@@ -254,18 +211,29 @@ def deploy() -> None:
     )
 
     log(f"Fetching latest {BRANCH}...")
-
     run(
         ["git", "fetch", "--prune", "origin", BRANCH],
         cwd=APP_DIR,
     )
+
+
+def deploy() -> None:
+    APP_DIR.mkdir(parents=True, exist_ok=True)
+    LOG_FILE.touch(exist_ok=True)
+
+    require_commands()
+    sync_repository()
+
+    if not (APP_DIR / ".env").exists():
+        raise DeployError(f".env not found: {APP_DIR / '.env'}")
+
+    os.chdir(APP_DIR)
 
     remote_commit = run(
         ["git", "rev-parse", f"origin/{BRANCH}"],
         cwd=APP_DIR,
         capture=True,
     )
-
     current_commit = run(
         ["git", "rev-parse", "HEAD"],
         cwd=APP_DIR,
@@ -275,6 +243,8 @@ def deploy() -> None:
     log(f"Current commit: {current_commit}")
     log(f"Remote commit : {remote_commit}")
 
+    # Normal mode: deploy only when GitHub has a different commit.
+    # Force mode: rebuild/restart without needing a new commit.
     if current_commit == remote_commit and not FORCE_DEPLOY:
         log("No new changes. Deployment not required.")
         return
@@ -284,26 +254,31 @@ def deploy() -> None:
     try:
         log(f"Deploying commit: {remote_commit}")
 
-        run(
-            ["git", "reset", "--hard", f"origin/{BRANCH}"],
-            cwd=APP_DIR,
-        )
+        if current_commit != remote_commit:
+            run(
+                ["git", "reset", "--hard", f"origin/{BRANCH}"],
+                cwd=APP_DIR,
+            )
 
-        run(
-            [
-                "git",
-                "clean",
-                "-fd",
-                "-e",
-                ".env",
-                "-e",
-                "deploy.log",
-            ],
-            cwd=APP_DIR,
-        )
+            run(
+                [
+                    "git",
+                    "clean",
+                    "-fd",
+                    "-e",
+                    ".env",
+                    "-e",
+                    "deploy.log",
+                ],
+                cwd=APP_DIR,
+            )
+        else:
+            log("FORCE_DEPLOY=1: keeping current application code.")
+
+        if not compose_project_ready():
+            raise DeployError("Required Docker Compose project files are missing")
 
         log("Validating Docker Compose configuration...")
-
         run(
             ["docker", "compose", "config"],
             cwd=APP_DIR,
@@ -311,14 +286,12 @@ def deploy() -> None:
         )
 
         log("Building Docker images...")
-
         run(
             ["docker", "compose", "build", "--pull"],
             cwd=APP_DIR,
         )
 
         log("Starting backend...")
-
         run(
             ["docker", "compose", "up", "-d", "backend"],
             cwd=APP_DIR,
@@ -327,7 +300,6 @@ def deploy() -> None:
         wait_for_backend()
 
         log("Running database migrations...")
-
         run(
             [
                 "docker",
@@ -343,7 +315,6 @@ def deploy() -> None:
         )
 
         log("Starting complete application...")
-
         run(
             [
                 "docker",
@@ -374,7 +345,28 @@ def deploy() -> None:
         )
 
     except Exception:
-        rollback(previous_commit)
+        if current_commit != remote_commit and previous_commit:
+            log("Deployment failed after a code update; starting rollback.")
+            try:
+                run(
+                    ["git", "reset", "--hard", previous_commit],
+                    cwd=APP_DIR,
+                )
+                run(
+                    [
+                        "docker",
+                        "compose",
+                        "up",
+                        "-d",
+                        "--build",
+                        "--remove-orphans",
+                    ],
+                    cwd=APP_DIR,
+                    check=False,
+                )
+                log("Application rollback completed.")
+            except Exception as exc:
+                log(f"Rollback failed: {exc}")
         raise
 
 
@@ -384,11 +376,9 @@ def main() -> int:
     try:
         deploy()
         return 0
-
     except Exception as exc:
         log(f"ERROR: {exc}")
         return 1
-
     finally:
         lock.close()
 

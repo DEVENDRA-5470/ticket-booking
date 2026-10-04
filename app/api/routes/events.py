@@ -19,6 +19,7 @@ from app.services.email import send_event_created_email, send_event_notification
 
 
 router = APIRouter()
+public_router = APIRouter()
 
 
 RANDOM_EVENT_NAMES = [
@@ -56,6 +57,12 @@ def create_event(
     event = Event(name=name, venue=venue, starts_at=starts_at)
 
     db.add(event)
+    db.flush()
+
+    db.add_all([
+        Seat(event_id=event.id, seat_number=f"S{i:03d}", status="AVAILABLE")
+        for i in range(1, event.capacity + 1)
+    ])
     db.commit()
     db.refresh(event)
 
@@ -126,6 +133,22 @@ def create_bulk_events(
         "results": results,
         "created_by": current_user.email,
     }
+
+
+@public_router.get("/")
+def public_list_events(db: Session = Depends(get_db)):
+    result = db.execute(
+        select(Event).where(Event.status == "PUBLISHED").order_by(Event.starts_at)
+    )
+    return result.scalars().all()
+
+
+@public_router.get("/{event_id}")
+def public_get_event(event_id: int, db: Session = Depends(get_db)):
+    event = db.get(Event, event_id)
+    if event is None or event.status != "PUBLISHED":
+        raise HTTPException(status_code=404, detail="Event not found")
+    return event
 
 
 @router.get("/")

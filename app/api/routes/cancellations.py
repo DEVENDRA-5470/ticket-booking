@@ -52,11 +52,30 @@ def cancel_booking(
         select(Payment).where(Payment.booking_id == booking.id)
     ).scalars().all()
 
+    payment_notifications = []
     for payment in payments:
         if payment.status == "SUCCESS":
             payment.status = "REFUND_PENDING"
+            payment_notifications.append(
+                f"Refund in progress for payment #{payment.id}: ₹{float(payment.amount):.2f}"
+            )
         elif payment.status == "PENDING":
             payment.status = "CANCELLED"
+            payment_notifications.append(
+                f"Payment #{payment.id} cancelled with the booking"
+            )
+        elif payment.status == "FAILED":
+            payment_notifications.append(
+                f"Payment #{payment.id} was already failed; no refund is required"
+            )
+
+    for payment_message in payment_notifications:
+        db.add(Notification(
+            user_id=current_user.id,
+            channel="IN_APP",
+            message=payment_message,
+            status="PENDING",
+        ))
 
     message = (
         f"Booking {booking.reference} cancelled: "

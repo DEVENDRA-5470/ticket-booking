@@ -151,3 +151,10 @@
 .paymentButton{display:inline-flex;align-items:center;gap:5px;border:1px solid #cfe9df;background:#edf8f3;color:#16855b;border-radius:8px;padding:8px 11px;font:700 10px 'DM Sans';cursor:pointer}
 .paymentModal{width:min(500px,94vw);overflow:hidden;padding:0}.paymentHero{padding:24px;background:linear-gradient(135deg,#191d2d,#3a315e);color:#fff}.paymentHero h2{font-size:24px;margin:5px 0}.paymentHero p{font-size:10px;color:#c1c4d0;margin:0}.paymentBody{padding:22px}.paymentBooking{display:flex;justify-content:space-between;padding:12px;border:1px solid #eceef2;border-radius:10px;font-size:10px;color:#7e8795}.paymentBooking b{color:#333d4d}.paymentHint{font-size:10px;color:#7e8795;margin:16px 0 10px}.paymentChoices{display:grid;gap:9px}.paymentChoices button{padding:12px;border-radius:9px;font:700 10px 'DM Sans';cursor:pointer}.paymentSuccess{border:1px solid #cfe9df;background:#edf8f3;color:#16855b}.paymentFailed{border:1px solid #f0d3d3;background:#fff3f3;color:#bf5b5b}
 @media(max-width:680px){.paymentModal{width:96vw}}
+
+
+.foodOrdersList{display:grid;gap:12px}.foodOrderCard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:17px 18px;box-shadow:0 4px 18px #18223806}
+.foodOrderCardTop{display:flex;justify-content:space-between;align-items:flex-start}.foodOrderCardTop h3{font-size:20px;margin-top:4px}
+.foodOrderDetails{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:15px;padding-top:13px;border-top:1px solid #edf0f4}.foodOrderDetails div{display:grid;gap:4px}.foodOrderDetails span{font-size:8px;color:#929aaa;text-transform:uppercase;letter-spacing:.5px}.foodOrderDetails b{font-size:10px;color:#354052;word-break:break-word}.orderStatus.success{color:#16855b}.orderStatus.failed{color:#bf5b5b}.orderStatus.refund_pending{color:#b87917}
+.foodOrderCardAction{margin-top:13px;padding-top:11px;border-top:1px solid #edf0f4}
+@media(max-width:900px){.foodOrderDetails{grid-template-columns:repeat(3,1fr)}}@media(max-width:680px){.foodOrderDetails{grid-template-columns:1fr 1fr}.foodOrderDetails div:first-child{grid-column:1/-1}}

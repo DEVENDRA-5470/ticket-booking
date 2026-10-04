@@ -31,4 +31,3 @@ def list_users(
         ],
         "total": len(users),
     }
-}

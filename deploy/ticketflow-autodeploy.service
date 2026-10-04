@@ -1,0 +1,13 @@
+[Unit]
+Description=TicketFlow automatic Git deployment
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=devilonline404
+WorkingDirectory=/home/devilonline404/ticket-booking
+Environment=APP_DIR=/home/devilonline404/ticket-booking
+Environment=BRANCH=main
+ExecStart=/usr/local/bin/ticketflow-deploy
+TimeoutStartSec=15min

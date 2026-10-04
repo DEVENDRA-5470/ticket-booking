@@ -8,8 +8,9 @@ Usage:
 Force rebuild/restart even when the working tree is unchanged:
     FORCE_DEPLOY=1 python3 deploy/deploy.py
 
-Database bootstrap/seed is intentionally separate:
-    docker compose exec -T backend env PYTHONPATH=/app python /app/scripts/create_table_seed_data.py
+Database handling:
+- Fresh database: bootstrap current schema/data, then stamp Alembic at head.
+- Existing database: run normal Alembic migrations, then idempotent seed.
 """
 
 from __future__ import annotations
@@ -143,6 +144,60 @@ def wait_for_backend() -> None:
         check=False,
     )
     raise DeployError("Backend failed to start")
+
+
+def prepare_database() -> None:
+    """Safely initialize or migrate the database."""
+    log("Inspecting database state...")
+
+    inspect_script = (
+        "from sqlalchemy import inspect; "
+        "from app.db.session import engine; "
+        "tables=set(inspect(engine).get_table_names()); "
+        "print('TABLES=' + ','.join(sorted(tables)))"
+    )
+
+    inspection = run(
+        ["docker","compose","exec","-T","backend","env","PYTHONPATH=/app",
+         "python","-c",inspect_script],
+        cwd=APP_DIR,
+        capture=True,
+    )
+    log(inspection)
+
+    app_tables = {"users","events","seats","bookings","booking_seats"}
+    tables = set()
+    for line in inspection.splitlines():
+        if line.startswith("TABLES="):
+            tables = {x for x in line.removeprefix("TABLES=").split(",") if x}
+            break
+    else:
+        raise DeployError("Could not determine database schema state")
+
+    if not tables.intersection(app_tables):
+        log("Fresh database detected. Bootstrapping schema and seed data...")
+        run(
+            ["docker","compose","exec","-T","backend","env","PYTHONPATH=/app",
+             "python","/app/scripts/create_table_seed_data.py"],
+            cwd=APP_DIR,
+        )
+        log("Stamping freshly bootstrapped schema at Alembic head...")
+        run(
+            ["docker","compose","exec","-T","backend","alembic","stamp","head"],
+            cwd=APP_DIR,
+        )
+    else:
+        log("Existing database detected. Running Alembic migrations...")
+        run(
+            ["docker","compose","exec","-T","backend","alembic","upgrade","head"],
+            cwd=APP_DIR,
+        )
+        log("Running idempotent seed sync...")
+        run(
+            ["docker","compose","exec","-T","backend","env","PYTHONPATH=/app",
+             "python","/app/scripts/create_table_seed_data.py"],
+            cwd=APP_DIR,
+        )
 
 
 def health_check() -> None:
@@ -299,20 +354,7 @@ def deploy() -> None:
 
         wait_for_backend()
 
-        log("Running database migrations...")
-        run(
-            [
-                "docker",
-                "compose",
-                "exec",
-                "-T",
-                "backend",
-                "alembic",
-                "upgrade",
-                "head",
-            ],
-            cwd=APP_DIR,
-        )
+        prepare_database()
 
         log("Starting complete application...")
         run(

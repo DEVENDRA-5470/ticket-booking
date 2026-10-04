@@ -8,8 +8,9 @@ Usage:
 Force rebuild/restart even when the working tree is unchanged:
     FORCE_DEPLOY=1 python3 deploy/deploy.py
 
-Database bootstrap/seed is intentionally separate:
-    docker compose exec -T backend env PYTHONPATH=/app python /app/scripts/create_table_seed_data.py
+Database handling:
+- Fresh database: bootstrap current schema/data, then stamp Alembic at head.
+- Existing database: run normal Alembic migrations, then idempotent seed.
 """
 
 from __future__ import annotations
@@ -145,7 +146,9 @@ def wait_for_backend() -> None:
     raise DeployError("Backend failed to start")
 
 
-def health_check() -> None:
+        prepare_database()
+
+        log("Starting complete application...")def health_check() -> None:
     log("Running application health check...")
 
     for _ in range(45):
@@ -299,20 +302,7 @@ def deploy() -> None:
 
         wait_for_backend()
 
-        log("Running database migrations...")
-        run(
-            [
-                "docker",
-                "compose",
-                "exec",
-                "-T",
-                "backend",
-                "alembic",
-                "upgrade",
-                "head",
-            ],
-            cwd=APP_DIR,
-        )
+        prepare_database()
 
         log("Starting complete application...")
         run(

@@ -3,10 +3,13 @@
 TicketFlow deployment script.
 
 Usage:
-    python deploy/deploy.py
+    python3 deploy/deploy.py
 
 Force deployment of the current commit:
-    FORCE_DEPLOY=1 python deploy/deploy.py
+    FORCE_DEPLOY=1 python3 deploy/deploy.py
+
+Database bootstrap/seed is intentionally separate:
+    docker compose exec -T backend env PYTHONPATH=/app python /app/scripts/create_table_seed_data.py
 """
 
 from __future__ import annotations
@@ -50,6 +53,7 @@ def run(
     capture: bool = False,
 ) -> str:
     log(f"$ {' '.join(command)}")
+
     result = subprocess.run(
         command,
         cwd=cwd,
@@ -63,6 +67,7 @@ def run(
         output = result.stdout or ""
         if output:
             print(output, end="", flush=True)
+
         raise DeployError(
             f"Command failed with exit code {result.returncode}: "
             f"{' '.join(command)}"
@@ -78,6 +83,7 @@ def require_commands() -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+
         if result.returncode != 0:
             raise DeployError(f"{command} is not installed")
 
@@ -89,6 +95,7 @@ def acquire_lock():
     import fcntl
 
     lock = LOCK_FILE.open("w")
+
     try:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
@@ -105,13 +112,26 @@ def rollback(previous_commit: str) -> None:
     log("==========================================")
 
     try:
-        run(["git", "reset", "--hard", previous_commit], cwd=APP_DIR)
         run(
-            ["docker", "compose", "up", "-d", "--build", "--remove-orphans"],
+            ["git", "reset", "--hard", previous_commit],
+            cwd=APP_DIR,
+        )
+
+        run(
+            [
+                "docker",
+                "compose",
+                "up",
+                "-d",
+                "--build",
+                "--remove-orphans",
+            ],
             cwd=APP_DIR,
             check=False,
         )
+
         log("Application rollback completed.")
+
     except Exception as exc:
         log(f"Rollback failed: {exc}")
 
@@ -126,10 +146,18 @@ def clone_repository() -> None:
         )
 
     log("Repository not found. Cloning repository...")
+
     APP_DIR.parent.mkdir(parents=True, exist_ok=True)
 
     run(
-        ["git", "clone", "--branch", BRANCH, REPO_URL, str(APP_DIR)]
+        [
+            "git",
+            "clone",
+            "--branch",
+            BRANCH,
+            REPO_URL,
+            str(APP_DIR),
+        ]
     )
 
 
@@ -150,13 +178,20 @@ def wait_for_backend() -> None:
             stderr=subprocess.DEVNULL,
         )
 
-        if result.returncode == 0 and result.stdout.strip() == "true":
+        if (
+            result.returncode == 0
+            and result.stdout.strip() == "true"
+        ):
             log("Backend container is running.")
             return
 
         time.sleep(2)
 
-    run(["docker", "logs", "--tail", "100", "ticketing-backend"], check=False)
+    run(
+        ["docker", "logs", "--tail", "100", "ticketing-backend"],
+        check=False,
+    )
+
     raise DeployError("Backend failed to start")
 
 
@@ -165,7 +200,13 @@ def health_check() -> None:
 
     for _ in range(45):
         result = subprocess.run(
-            ["curl", "-fsS", "--max-time", "5", HEALTH_URL],
+            [
+                "curl",
+                "-fsS",
+                "--max-time",
+                "5",
+                HEALTH_URL,
+            ],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -178,8 +219,18 @@ def health_check() -> None:
         time.sleep(2)
 
     log("Health check failed.")
-    run(["docker", "logs", "--tail", "100", "ticketing-backend"], check=False)
-    run(["docker", "compose", "ps"], cwd=APP_DIR, check=False)
+
+    run(
+        ["docker", "logs", "--tail", "100", "ticketing-backend"],
+        check=False,
+    )
+
+    run(
+        ["docker", "compose", "ps"],
+        cwd=APP_DIR,
+        check=False,
+    )
+
     raise DeployError("Application health check failed")
 
 
@@ -191,19 +242,30 @@ def deploy() -> None:
     clone_repository()
 
     if not (APP_DIR / ".env").exists():
-        raise DeployError(f".env not found: {APP_DIR / '.env'}")
+        raise DeployError(
+            f".env not found: {APP_DIR / '.env'}"
+        )
 
     os.chdir(APP_DIR)
 
-    run(["git", "remote", "set-url", "origin", REPO_URL], cwd=APP_DIR)
+    run(
+        ["git", "remote", "set-url", "origin", REPO_URL],
+        cwd=APP_DIR,
+    )
+
     log(f"Fetching latest {BRANCH}...")
-    run(["git", "fetch", "--prune", "origin", BRANCH], cwd=APP_DIR)
+
+    run(
+        ["git", "fetch", "--prune", "origin", BRANCH],
+        cwd=APP_DIR,
+    )
 
     remote_commit = run(
         ["git", "rev-parse", f"origin/{BRANCH}"],
         cwd=APP_DIR,
         capture=True,
     )
+
     current_commit = run(
         ["git", "rev-parse", "HEAD"],
         cwd=APP_DIR,
@@ -222,7 +284,11 @@ def deploy() -> None:
     try:
         log(f"Deploying commit: {remote_commit}")
 
-        run(["git", "reset", "--hard", f"origin/{BRANCH}"], cwd=APP_DIR)
+        run(
+            ["git", "reset", "--hard", f"origin/{BRANCH}"],
+            cwd=APP_DIR,
+        )
+
         run(
             [
                 "git",
@@ -237,23 +303,31 @@ def deploy() -> None:
         )
 
         log("Validating Docker Compose configuration...")
-        run(["docker", "compose", "config"], cwd=APP_DIR, capture=True)
+
+        run(
+            ["docker", "compose", "config"],
+            cwd=APP_DIR,
+            capture=True,
+        )
 
         log("Building Docker images...")
-        run(["docker", "compose", "build", "--pull"], cwd=APP_DIR)
 
-        log("Starting backend...")
-        run(["docker", "compose", "up", "-d", "backend"], cwd=APP_DIR)
-        wait_for_backend()
-
-        log("Running database migrations...")
         run(
-            ["docker", "compose", "exec", "-T", "backend", "alembic", "upgrade", "head"],
+            ["docker", "compose", "build", "--pull"],
             cwd=APP_DIR,
         )
 
-        seed_script = "/app/scripts/create_table_seed_data.py"
-        log("Creating tables and seeding data...")
+        log("Starting backend...")
+
+        run(
+            ["docker", "compose", "up", "-d", "backend"],
+            cwd=APP_DIR,
+        )
+
+        wait_for_backend()
+
+        log("Running database migrations...")
+
         run(
             [
                 "docker",
@@ -261,28 +335,43 @@ def deploy() -> None:
                 "exec",
                 "-T",
                 "backend",
-                "env",
-                "PYTHONPATH=/app",
-                "python",
-                seed_script,
+                "alembic",
+                "upgrade",
+                "head",
             ],
             cwd=APP_DIR,
         )
 
         log("Starting complete application...")
+
         run(
-            ["docker", "compose", "up", "-d", "--remove-orphans"],
+            [
+                "docker",
+                "compose",
+                "up",
+                "-d",
+                "--remove-orphans",
+            ],
             cwd=APP_DIR,
         )
 
         health_check()
 
+        deployed_commit = run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=APP_DIR,
+            capture=True,
+        )
+
         log("==========================================")
         log("DEPLOYMENT SUCCESSFUL")
-        log(f"Commit: {run(['git', 'rev-parse', 'HEAD'], cwd=APP_DIR, capture=True)}")
+        log(f"Commit: {deployed_commit}")
         log("==========================================")
 
-        run(["docker", "compose", "ps"], cwd=APP_DIR)
+        run(
+            ["docker", "compose", "ps"],
+            cwd=APP_DIR,
+        )
 
     except Exception:
         rollback(previous_commit)
@@ -295,9 +384,11 @@ def main() -> int:
     try:
         deploy()
         return 0
+
     except Exception as exc:
         log(f"ERROR: {exc}")
         return 1
+
     finally:
         lock.close()
 

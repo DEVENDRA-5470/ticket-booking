@@ -1,7 +1,7 @@
 from uuid import uuid4
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from app.core.security import get_current_user
 from app.db.session import get_db
@@ -218,7 +218,7 @@ def global_bookings(
         query = query.where(Booking.status == status_filter.upper())
 
     if search:
-        term = `%${search.trim()}%`
+        term = f"%{search.strip()}%"
         query = query.where(
             User.email.ilike(term)
             | User.name.ilike(term)
@@ -227,7 +227,7 @@ def global_bookings(
         )
 
     count_query = (
-        select(__import__("sqlalchemy", fromlist=["func"]).func.count(Booking.id))
+        select(func.count(Booking.id))
         .join(User, User.id == Booking.user_id)
         .join(Event, Event.id == Booking.event_id)
     )

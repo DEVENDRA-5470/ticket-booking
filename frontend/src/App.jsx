@@ -172,7 +172,6 @@ function CustomerApp({token,user,onUnauthorized,onLogout}) {
   const [notifications,setNotifications]=useState([])
   const [loading,setLoading]=useState(true)
   const [refreshing,setRefreshing]=useState(false)
-  const isAdmin = user?.role === 'ADMIN'
 
   const load=async(showSpinner=false)=>{
     if(showSpinner)setRefreshing(true)
@@ -228,7 +227,7 @@ function CustomerApp({token,user,onUnauthorized,onLogout}) {
       <button className={section==='overview'?'sideItem active':'sideItem'} onClick={()=>setSection('overview')}><ShieldCheck size={17}/> Overview</button>
       <button className={section==='events'?'sideItem active':'sideItem'} onClick={()=>setSection('events')}><CalendarDays size={17}/> Discover events</button>
       <button className={section==='bookings'?'sideItem active':'sideItem'} onClick={()=>setSection('bookings')}><Ticket size={17}/> My orders</button>
-      {isAdmin&&<button className={section==='global-bookings'?'sideItem active':'sideItem'} onClick={()=>setSection('global-bookings')}><Users size={17}/> All bookings</button>}
+      <button className={section==='global-bookings'?'sideItem active':'sideItem'} onClick={()=>setSection('global-bookings')}><Users size={17}/> All bookings</button>
       <button className={section==='food'?'sideItem active':'sideItem'} onClick={()=>setSection('food')}><span>🍽️</span> Food orders</button>
       <button className={section==='notifications'?'sideItem active':'sideItem'} onClick={()=>setSection('notifications')}><Bell size={17}/><span>Notifications</span>{unread>0&&<em>{unread}</em>}</button>
       <div className="sideBottom"><div className="sideHealth"><i/> Platform operational</div><small>Customer workspace</small></div>
@@ -247,7 +246,7 @@ function CustomerApp({token,user,onUnauthorized,onLogout}) {
       {section==='overview'&&<CustomerOverview user={user} loading={loading} active={active} cancelled={cancelled} unread={unread} onNavigate={setSection} bookings={bookings}/>}
       {section==='events'&&<AuthenticatedEvents events={events} onRefresh={load}/>}
       {section==='bookings'&&<MyBookings bookings={bookings} token={token} onChanged={load} onUnauthorized={onUnauthorized}/>}
-      {section==='global-bookings'&&isAdmin&&<GlobalBookings token={token} onUnauthorized={onUnauthorized}/>}
+      {section==='global-bookings'&&<GlobalBookings token={token} onUnauthorized={onUnauthorized}/>} 
       {section==='food'&&<FoodOrdersPanel token={token} onUnauthorized={onUnauthorized}/>} 
       {section==='notifications'&&<NotificationCenter notifications={notifications} onMarkRead={markRead} onMarkAllRead={markAllRead}/>}
     </main>

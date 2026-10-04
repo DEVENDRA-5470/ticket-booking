@@ -146,9 +146,61 @@ def wait_for_backend() -> None:
     raise DeployError("Backend failed to start")
 
 
-        prepare_database()
+def prepare_database() -> None:
+    """Safely initialize or migrate the database."""
+    log("Inspecting database state...")
 
-        log("Starting complete application...")def health_check() -> None:
+    inspect_script = (
+        "from sqlalchemy import inspect; "
+        "from app.db.session import engine; "
+        "tables=set(inspect(engine).get_table_names()); "
+        "print('TABLES=' + ','.join(sorted(tables)))"
+    )
+
+    inspection = run(
+        ["docker","compose","exec","-T","backend","env","PYTHONPATH=/app",
+         "python","-c",inspect_script],
+        cwd=APP_DIR,
+        capture=True,
+    )
+    log(inspection)
+
+    app_tables = {"users","events","seats","bookings","booking_seats"}
+    tables = set()
+    for line in inspection.splitlines():
+        if line.startswith("TABLES="):
+            tables = {x for x in line.removeprefix("TABLES=").split(",") if x}
+            break
+    else:
+        raise DeployError("Could not determine database schema state")
+
+    if not tables.intersection(app_tables):
+        log("Fresh database detected. Bootstrapping schema and seed data...")
+        run(
+            ["docker","compose","exec","-T","backend","env","PYTHONPATH=/app",
+             "python","/app/scripts/create_table_seed_data.py"],
+            cwd=APP_DIR,
+        )
+        log("Stamping freshly bootstrapped schema at Alembic head...")
+        run(
+            ["docker","compose","exec","-T","backend","alembic","stamp","head"],
+            cwd=APP_DIR,
+        )
+    else:
+        log("Existing database detected. Running Alembic migrations...")
+        run(
+            ["docker","compose","exec","-T","backend","alembic","upgrade","head"],
+            cwd=APP_DIR,
+        )
+        log("Running idempotent seed sync...")
+        run(
+            ["docker","compose","exec","-T","backend","env","PYTHONPATH=/app",
+             "python","/app/scripts/create_table_seed_data.py"],
+            cwd=APP_DIR,
+        )
+
+
+def health_check() -> None:
     log("Running application health check...")
 
     for _ in range(45):

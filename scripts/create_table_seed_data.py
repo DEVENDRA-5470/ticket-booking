@@ -7,9 +7,14 @@ Run inside the backend container:
     PYTHONPATH=/app python /app/scripts/create_table_seed_data.py
 
 This script is idempotent:
+- Existing tables are preserved.
 - Existing events are not duplicated.
 - Existing food items are not duplicated.
-- Existing tables are left unchanged.
+
+IMPORTANT:
+This script is intended for bootstrapping an empty database.
+Alembic remains the authoritative mechanism for schema migrations
+after the database has been initialized.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -17,16 +22,15 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
-from app.db.base import Base
-from app.db.session import SessionLocal, engine
+# Base is defined in app.db.session in the current project.
+from app.db.session import Base, SessionLocal, engine
 
-from app.models.booking import Booking, BookingSeat
+# Import the models package so every model is registered with Base.metadata.
+from app import models  # noqa: F401
+
 from app.models.event import Event
-from app.models.food import FoodItem, FoodOrder, FoodOrderItem
-from app.models.notification import Notification
-from app.models.payment import Payment
+from app.models.food import FoodItem
 from app.models.seat import Seat
-from app.models.user import User
 
 
 FOOD_ITEMS = [
@@ -78,23 +82,34 @@ EVENTS = [
 
 
 def create_tables() -> None:
+    """Create missing tables for a completely fresh database."""
+
     print("Creating database tables...")
+
+    # SQLAlchemy will create only tables that do not already exist.
     Base.metadata.create_all(bind=engine)
+
     print("Database tables ready.")
 
 
 def seed_events(db) -> None:
+    """Seed events and their seats without creating duplicates."""
+
     print("Seeding events...")
 
     existing_names = set(
-        db.execute(select(Event.name)).scalars().all()
+        db.execute(
+            select(Event.name)
+        ).scalars().all()
     )
 
     created = 0
     skipped = 0
+
     now = datetime.now(timezone.utc)
 
     for index, (name, venue) in enumerate(EVENTS, start=1):
+
         if name in existing_names:
             skipped += 1
             continue
@@ -110,51 +125,63 @@ def seed_events(db) -> None:
         db.add(event)
         db.flush()
 
-        db.add_all(
-            [
-                Seat(
-                    event_id=event.id,
-                    seat_number=f"S{i:03d}",
-                    status="AVAILABLE",
-                )
-                for i in range(1, event.capacity + 1)
-            ]
-        )
+        seats = [
+            Seat(
+                event_id=event.id,
+                seat_number=f"S{i:03d}",
+                status="AVAILABLE",
+            )
+            for i in range(1, event.capacity + 1)
+        ]
+
+        db.add_all(seats)
 
         created += 1
 
     db.commit()
 
-    print(f"Events seed complete: created={created}, skipped={skipped}")
+    print(
+        f"Events seed complete: "
+        f"created={created}, skipped={skipped}"
+    )
 
 
 def seed_food(db) -> None:
+    """Seed food items without creating duplicates."""
+
     print("Seeding food items...")
 
     existing_names = set(
-        db.execute(select(FoodItem.name)).scalars().all()
+        db.execute(
+            select(FoodItem.name)
+        ).scalars().all()
     )
 
     created = 0
     skipped = 0
 
     for name, price in FOOD_ITEMS:
+
         if name in existing_names:
             skipped += 1
             continue
 
-        db.add(
-            FoodItem(
-                name=name,
-                price=price,
-                available=True,
-            )
+        food_item = FoodItem(
+            name=name,
+            price=price,
+            available=True,
         )
+
+        db.add(food_item)
+
         created += 1
 
     db.commit()
 
-    print(f"Food seed complete: created={created}, skipped={skipped}")
+    print(
+        f"Food seed complete: "
+        f"created={created}, skipped={skipped}"
+    )
 
 
 def main() -> None:
@@ -169,9 +196,11 @@ def main() -> None:
     try:
         seed_events(db)
         seed_food(db)
+
     except Exception:
         db.rollback()
         raise
+
     finally:
         db.close()
 

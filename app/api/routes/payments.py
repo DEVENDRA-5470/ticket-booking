@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -46,6 +46,7 @@ def _calculate_amount(booking_id: int, db: Session) -> float:
 def simulate_payment(
     booking_id: int,
     background_tasks: BackgroundTasks,
+    result: str = Query("success", pattern="^(success|failed)$"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -64,15 +65,16 @@ def simulate_payment(
         return {"payment": existing, "message": "Payment already successful"}
 
     amount = _calculate_amount(booking.id, db)
+    payment_status = "SUCCESS" if result == "success" else "FAILED"
     payment = Payment(
         booking_id=booking.id,
         amount=amount,
-        status="SUCCESS",
+        status=payment_status,
         provider_reference=f"SIM-{uuid4().hex[:12].upper()}",
     )
     db.add(payment)
 
-    message = f"Payment successful for booking {booking.reference}: ₹{amount:.2f}"
+    message = f"Payment {'successful' if result == 'success' else 'failed'} for booking {booking.reference}: ₹{amount:.2f}"
     db.add(Notification(
         user_id=current_user.id,
         channel="IN_APP",

@@ -228,6 +228,7 @@ function CustomerApp({token,user,onUnauthorized,onLogout}) {
       <button className={section==='events'?'sideItem active':'sideItem'} onClick={()=>setSection('events')}><CalendarDays size={17}/> Discover events</button>
       <button className={section==='bookings'?'sideItem active':'sideItem'} onClick={()=>setSection('bookings')}><Ticket size={17}/> My orders</button>
       <button className={section==='global-bookings'?'sideItem active':'sideItem'} onClick={()=>setSection('global-bookings')}><Users size={17}/> All bookings</button>
+      <button className={section==='users'?'sideItem active':'sideItem'} onClick={()=>setSection('users')}><Users size={17}/> All users</button>
       <button className={section==='food'?'sideItem active':'sideItem'} onClick={()=>setSection('food')}><span>🍽️</span> Food orders</button>
       <button className={section==='notifications'?'sideItem active':'sideItem'} onClick={()=>setSection('notifications')}><Bell size={17}/><span>Notifications</span>{unread>0&&<em>{unread}</em>}</button>
       <div className="sideBottom"><div className="sideHealth"><i/> Platform operational</div><small>Customer workspace</small></div>
@@ -235,7 +236,7 @@ function CustomerApp({token,user,onUnauthorized,onLogout}) {
 
     <main className="customerMain">
       <div className="customerTopbar">
-        <div className="breadcrumb"><span>Account</span><ChevronRight size={13}/><b>{section==='overview'?'Overview':section==='events'?'Discover events':section==='bookings'?'My orders':section==='global-bookings'?'All bookings':section==='food'?'Food orders':'Notifications'}</b></div>
+        <div className="breadcrumb"><span>Account</span><ChevronRight size={13}/><b>{section==='overview'?'Overview':section==='events'?'Discover events':section==='bookings'?'My orders':section==='global-bookings'?'All bookings':section==='users'?'All users':section==='food'?'Food orders':'Notifications'}</b></div>
         <div className="topbarActions">
           <span className="syncLabel"><i/> Live sync</span>
           <button className="iconButton" title="Refresh" onClick={()=>load(true)} disabled={refreshing}><RefreshCw size={16} className={refreshing?'spin':''}/></button>
@@ -246,7 +247,8 @@ function CustomerApp({token,user,onUnauthorized,onLogout}) {
       {section==='overview'&&<CustomerOverview user={user} loading={loading} active={active} cancelled={cancelled} unread={unread} onNavigate={setSection} bookings={bookings}/>}
       {section==='events'&&<AuthenticatedEvents events={events} onRefresh={load}/>}
       {section==='bookings'&&<MyBookings bookings={bookings} token={token} onChanged={load} onUnauthorized={onUnauthorized}/>}
-      {section==='global-bookings'&&<GlobalBookings token={token} onUnauthorized={onUnauthorized}/>} 
+      {section==='global-bookings'&&<GlobalBookings token={token} onUnauthorized={onUnauthorized}/>}
+      {section==='users'&&<GlobalUsers token={token} onUnauthorized={onUnauthorized}/>} 
       {section==='food'&&<FoodOrdersPanel token={token} onUnauthorized={onUnauthorized}/>} 
       {section==='notifications'&&<NotificationCenter notifications={notifications} onMarkRead={markRead} onMarkAllRead={markAllRead}/>}
     </main>
@@ -359,6 +361,82 @@ function MyBookings({bookings,token,onChanged,onUnauthorized}) {
     {order.status==='CONFIRMED'&&<div className="fullOrderActions"><PaymentPanel booking={{id:order.booking_id,reference:order.reference}} token={token} onUnauthorized={onUnauthorized}/><FoodOrderPanel booking={{id:order.booking_id,reference:order.reference}} token={token} onUnauthorized={onUnauthorized}/><button className="dangerCta" disabled={cancelling===order.booking_id} onClick={()=>cancel(order)}>{cancelling===order.booking_id?'Cancelling…':'Cancel booking'}</button></div>}
   </article>)}</div>:<div className="dashboardEmpty"><Ticket size={30}/><b>No orders yet</b><span>Your complete reservations will appear here.</span></div>}</div>
 }
+function GlobalUsers({token,onUnauthorized}) {
+  const [users,setUsers]=useState([])
+  const [loading,setLoading]=useState(true)
+  const [error,setError]=useState('')
+  const [search,setSearch]=useState('')
+
+  const load=async()=>{
+    setLoading(true)
+    setError('')
+    try {
+      const data=await api('/v1/users/',{},token)
+      setUsers(Array.isArray(data?.items)?data.items:[])
+    } catch(e) {
+      setError(e.message)
+      if(e.status===401)onUnauthorized()
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(()=>{load()},[token])
+
+  const filtered=useMemo(()=>{
+    const q=search.trim().toLowerCase()
+    if(!q)return users
+    return users.filter(user =>
+      (user.name+' '+user.email+' '+user.role).toLowerCase().includes(q)
+    )
+  },[users,search])
+
+  return <div>
+    <div className="customerHeader">
+      <div>
+        <span className="kicker">PLATFORM / USERS</span>
+        <h2>All registered users.</h2>
+        <p>Global view of every account registered on TicketFlow.</p>
+      </div>
+      <button className="secondaryCta" onClick={load} disabled={loading}>
+        <RefreshCw size={14}/> Refresh
+      </button>
+    </div>
+
+    <div className="customerStats globalBookingStats">
+      <Stat label="Total users" value={users.length} note="Registered accounts" icon={<Users size={16}/>}/>
+      <Stat label="Customers" value={users.filter(u=>u.role==='CUSTOMER').length} note="Standard accounts" icon={<Users size={16}/>}/>
+      <Stat label="Admins" value={users.filter(u=>u.role==='ADMIN').length} note="Admin accounts" icon={<ShieldCheck size={16}/>}/>
+      <Stat label="Shown" value={filtered.length} note="Current search" icon={<Search size={16}/>}/>
+    </div>
+
+    <div className="globalBookingToolbar">
+      <div className="search compact">
+        <Search size={16}/>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name, email or role"/>
+      </div>
+      <span>{filtered.length} of {users.length} users</span>
+    </div>
+
+    {error&&<div className="formError">{error}</div>}
+
+    {loading?<div className="dashboardEmpty">Loading registered users…</div>:
+      filtered.length?<div className="globalBookingTableWrap">
+        <table className="globalBookingTable">
+          <thead><tr><th>User</th><th>Email</th><th>User ID</th><th>Role</th></tr></thead>
+          <tbody>{filtered.map(user=>
+            <tr key={user.id}>
+              <td><div className="globalCustomer"><b>{user.name}</b></div></td>
+              <td><div className="globalCustomer"><span>{user.email}</span></div></td>
+              <td>#{user.id}</td>
+              <td><span className="statusPill">{user.role}</span></td>
+            </tr>
+          )}</tbody>
+        </table>
+      </div>:<div className="dashboardEmpty"><Users size={30}/><b>No users found</b><span>Try another search.</span></div>}
+  </div>
+}
+
 function GlobalBookings({token,onUnauthorized}) {
   const [items,setItems]=useState([])
   const [total,setTotal]=useState(0)

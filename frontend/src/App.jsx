@@ -350,8 +350,57 @@ function MyBookings({bookings,token,onChanged,onUnauthorized}) {
     {bookings.length?<div className="bookingCards">{bookings.map(b=><article className="bookingCard" key={b.id}>
       <div className="bookingCardMain"><div className="bookingRef"><Ticket size={16}/><b>{b.reference}</b></div><span className={'statusPill '+b.status.toLowerCase()}>{b.status}</span></div>
       <div className="bookingCardMeta"><span>Event #{b.event_id}</span><span>Booking #{b.id}</span></div>
-      {b.status==='CONFIRMED'&&<div className="bookingCardAction"><button className="dangerCta" disabled={cancelling===b.id} onClick={()=>cancel(b)}>{cancelling===b.id?'Cancelling…':'Cancel booking'}</button></div>}
+      {b.status==='CONFIRMED'&&<div className="bookingCardAction bookingActions"><button className="dangerCta" disabled={cancelling===b.id} onClick={()=>cancel(b)}>{cancelling===b.id?'Cancelling…':'Cancel booking'}</button><FoodOrderPanel booking={b} token={token} onUnauthorized={onUnauthorized}/></div>}
     </article>)}</div>:<div className="dashboardEmpty"><Ticket size={30}/><b>No bookings yet</b><span>Your confirmed reservations will appear here.</span></div>}
+  </div>
+}
+
+function FoodOrderPanel({booking,token,onUnauthorized}) {
+  const [open,setOpen]=useState(false)
+  const [items,setItems]=useState([])
+  const [cart,setCart]=useState({})
+  const [loading,setLoading]=useState(false)
+  const [placing,setPlacing]=useState(false)
+  const [message,setMessage]=useState('')
+
+  useEffect(()=>{
+    if(!open || items.length) return
+    setLoading(true)
+    api('/v1/food/items',{},token)
+      .then(data=>setItems(Array.isArray(data)?data.filter(x=>x.available):[]))
+      .catch(e=>{if(e.status===401)onUnauthorized()})
+      .finally(()=>setLoading(false))
+  },[open,items.length,token])
+
+  const total=items.reduce((sum,item)=>sum+(Number(item.price)*Number(cart[item.id]||0)),0)
+  const count=Object.values(cart).reduce((sum,q)=>sum+Number(q||0),0)
+
+  const placeOrder=async()=>{
+    const orderItems=Object.entries(cart).filter(([,q])=>Number(q)>0).map(([id,q])=>[Number(id),Number(q)])
+    if(!orderItems.length) return
+    setPlacing(true);setMessage('')
+    try {
+      const result=await api('/v1/food/orders',{method:'POST',body:JSON.stringify({booking_id:booking.id,items:orderItems})},token)
+      setCart({})
+      setMessage(`Food order #${result.order_id} placed · ₹${Number(result.total).toFixed(2)}`)
+    } catch(e) {
+      setMessage(e.message)
+      if(e.status===401)onUnauthorized()
+    } finally {setPlacing(false)}
+  }
+
+  return <div className="foodOrderArea">
+    <button className="foodOrderButton" onClick={()=>setOpen(x=>!x)}><span>🍽️ Order food</span><ArrowRight size={13}/></button>
+    {open&&<div className="foodMenu">
+      <div className="foodMenuHeader"><div><b>Food for this event</b><span>Only available for confirmed bookings</span></div><button onClick={()=>setOpen(false)}><X size={15}/></button></div>
+      {loading?<div className="foodLoading">Loading menu…</div>:
+        <div className="foodGrid">{items.map(item=><div className="foodItem" key={item.id}>
+          <div><b>{item.name}</b><span>₹{Number(item.price).toFixed(0)}</span></div>
+          <div className="foodQty"><button disabled={!cart[item.id]} onClick={()=>setCart(c=>({...c,[item.id]:Math.max(0,(c[item.id]||0)-1)}))}>−</button><b>{cart[item.id]||0}</b><button onClick={()=>setCart(c=>({...c,[item.id]:(c[item.id]||0)+1}))}>+</button></div>
+        </div>)}</div>}
+      <div className="foodCheckout"><span>{count} item{count===1?'':'s'} · ₹{total.toFixed(2)}</span><button className="primaryCta" disabled={!count||placing} onClick={placeOrder}>{placing?'Placing…':'Place food order'}</button></div>
+      {message&&<div className="foodMessage">{message}</div>}
+    </div>}
   </div>
 }
 

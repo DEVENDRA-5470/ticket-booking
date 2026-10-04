@@ -11,9 +11,25 @@ from app.models.food import FoodItem, FoodOrder, FoodOrderItem
 from app.models.notification import Notification
 from app.models.payment import Payment
 from app.models.user import User
-from app.services.email import send_notification_email
+from app.services.email import send_final_order_confirmation_email, send_notification_email
 
 router = APIRouter()
+
+def _final_order(booking, payment, db):
+    event = db.get(__import__('app.models.event', fromlist=['Event']).Event, booking.event_id)
+    seats = db.execute(select(BookingSeat).where(BookingSeat.booking_id == booking.id)).scalars().all()
+    seat_numbers = [db.get(__import__('app.models.seat', fromlist=['Seat']).Seat, x.seat_id).seat_number for x in seats]
+    food_items=[]; food_total=0.0
+    orders=db.execute(select(FoodOrder).where(FoodOrder.booking_id==booking.id, FoodOrder.status!='CANCELLED')).scalars().all()
+    for o in orders:
+        rows=db.execute(select(FoodOrderItem).where(FoodOrderItem.food_order_id==o.id)).scalars().all()
+        for row in rows:
+            item=db.get(FoodItem,row.food_item_id)
+            if item:
+                total=float(item.price)*row.quantity; food_total+=total; food_items.append({'name':item.name,'quantity':row.quantity,'line_total':total})
+    ticket_total=len(seat_numbers)*500.0
+    return {'reference':booking.reference,'event_name':event.name,'venue':event.venue,'starts_at':event.starts_at.isoformat(),'status':booking.status,'seats':seat_numbers,'ticket_total':ticket_total,'food_items':food_items,'food_total':food_total,'payment_id':payment.id,'payment_status':payment.status,'payment_amount':float(payment.amount),'payment_reference':payment.provider_reference,'grand_total':ticket_total+food_total}
+
 
 
 def _calculate_amount(booking_id: int, db: Session) -> float:
@@ -84,15 +100,10 @@ def simulate_payment(
     db.commit()
     db.refresh(payment)
 
-    background_tasks.add_task(
-        send_notification_email,
-        current_user.email,
-        current_user.name,
-        message,
-        "Payment Successful",
-    )
+    if result == "success":
+        background_tasks.add_task(send_final_order_confirmation_email, current_user.email, current_user.name, _final_order(booking, payment, db))
 
-    return {"message": "Simulated payment successful", "payment": payment}
+    return {"message": "Simulated payment successful" if result == "success" else "Simulated payment failed", "payment": payment}
 
 
 @router.post("/{booking_id}")

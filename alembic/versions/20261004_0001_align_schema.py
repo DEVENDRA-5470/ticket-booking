@@ -1,7 +1,7 @@
 """align existing database with current domain models
 
 Revision ID: 20261004_0001
-Revises:
+Revises: ab3f3b5c6c5c
 Create Date: 2026-10-04
 """
 
@@ -16,7 +16,11 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Add new columns with server defaults so existing rows remain valid.
+    # This migration is intended for databases that already have the
+    # historical baseline schema. Fresh databases are bootstrapped by the
+    # deployment script before Alembic is executed.
+
+    # Users
     op.add_column(
         "users",
         sa.Column(
@@ -28,6 +32,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_users_role", "users", ["role"], unique=False)
 
+    # Events
     op.add_column(
         "events",
         sa.Column(
@@ -48,7 +53,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_events_status", "events", ["status"], unique=False)
 
-    # Existing bookings need stable references before the column can be NOT NULL.
+    # Bookings
     op.add_column(
         "bookings",
         sa.Column("reference", sa.String(length=30), nullable=True),
@@ -59,8 +64,14 @@ def upgrade() -> None:
         "WHERE reference IS NULL"
     )
     op.alter_column("bookings", "reference", nullable=False)
-    op.create_index("ix_bookings_reference", "bookings", ["reference"], unique=True)
+    op.create_index(
+        "ix_bookings_reference",
+        "bookings",
+        ["reference"],
+        unique=True,
+    )
 
+    # Constraints
     op.create_unique_constraint(
         "uq_event_seat_number",
         "seats",
@@ -74,15 +85,32 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint("uq_booking_seat", "booking_seats", type_="unique")
-    op.drop_constraint("uq_event_seat_number", "seats", type_="unique")
+    op.drop_constraint(
+        "uq_booking_seat",
+        "booking_seats",
+        type_="unique",
+    )
+    op.drop_constraint(
+        "uq_event_seat_number",
+        "seats",
+        type_="unique",
+    )
 
-    op.drop_index("ix_bookings_reference", table_name="bookings")
+    op.drop_index(
+        "ix_bookings_reference",
+        table_name="bookings",
+    )
     op.drop_column("bookings", "reference")
 
-    op.drop_index("ix_events_status", table_name="events")
+    op.drop_index(
+        "ix_events_status",
+        table_name="events",
+    )
     op.drop_column("events", "status")
     op.drop_column("events", "capacity")
 
-    op.drop_index("ix_users_role", table_name="users")
+    op.drop_index(
+        "ix_users_role",
+        table_name="users",
+    )
     op.drop_column("users", "role")

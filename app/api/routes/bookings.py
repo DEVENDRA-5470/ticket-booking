@@ -194,6 +194,138 @@ def my_orders(
     return result
 
 
+@router.get("/global")
+def global_bookings(
+    limit: int = 100,
+    offset: int = 0,
+    status_filter: str | None = None,
+    search: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the global booking view for operational/admin users."""
+    if current_user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    query = (
+        select(Booking)
+        .join(User, User.id == Booking.user_id)
+        .join(Event, Event.id == Booking.event_id)
+        .order_by(Booking.created_at.desc())
+    )
+
+    if status_filter:
+        query = query.where(Booking.status == status_filter.upper())
+
+    if search:
+        term = `%${search.trim()}%`
+        query = query.where(
+            User.email.ilike(term)
+            | User.name.ilike(term)
+            | Booking.reference.ilike(term)
+            | Event.name.ilike(term)
+        )
+
+    count_query = (
+        select(__import__("sqlalchemy", fromlist=["func"]).func.count(Booking.id))
+        .join(User, User.id == Booking.user_id)
+        .join(Event, Event.id == Booking.event_id)
+    )
+    if status_filter:
+        count_query = count_query.where(Booking.status == status_filter.upper())
+    if search:
+        term = `%${search.trim()}%`
+        count_query = count_query.where(
+            User.email.ilike(term)
+            | User.name.ilike(term)
+            | Booking.reference.ilike(term)
+            | Event.name.ilike(term)
+        )
+
+    total = db.scalar(count_query) or 0
+
+    bookings = db.execute(
+        query.offset(max(offset, 0)).limit(min(max(limit, 1), 500))
+    ).scalars().all()
+
+    result = []
+    for booking in bookings:
+        user = db.get(User, booking.user_id)
+        event = db.get(Event, booking.event_id)
+        seats = db.execute(
+            select(Seat)
+            .join(BookingSeat, BookingSeat.seat_id == Seat.id)
+            .where(BookingSeat.booking_id == booking.id)
+            .order_by(Seat.seat_number)
+        ).scalars().all()
+        payments = db.execute(
+            select(Payment)
+            .where(Payment.booking_id == booking.id)
+            .order_by(Payment.id.desc())
+        ).scalars().all()
+        food_orders = db.execute(
+            select(FoodOrder)
+            .where(FoodOrder.booking_id == booking.id)
+            .order_by(FoodOrder.id.desc())
+        ).scalars().all()
+
+        food_total = 0.0
+        for food_order in food_orders:
+            if food_order.status == "CANCELLED":
+                continue
+            items = db.execute(
+                select(FoodOrderItem, FoodItem)
+                .join(FoodItem, FoodItem.id == FoodOrderItem.food_item_id)
+                .where(FoodOrderItem.food_order_id == food_order.id)
+            ).all()
+            food_total += sum(
+                float(item.price) * row.quantity
+                for row, item in items
+            )
+
+        result.append({
+            "booking_id": booking.id,
+            "reference": booking.reference,
+            "status": booking.status,
+            "created_at": booking.created_at.isoformat() if booking.created_at else None,
+            "customer": {
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+            } if user else None,
+            "event": {
+                "id": event.id,
+                "name": event.name,
+                "venue": event.venue,
+                "starts_at": event.starts_at.isoformat(),
+                "status": event.status,
+            } if event else None,
+            "seats": [
+                {"id": seat.id, "number": seat.seat_number, "status": seat.status}
+                for seat in seats
+            ],
+            "ticket_amount": round(len(seats) * 500, 2),
+            "payments": [
+                {
+                    "id": payment.id,
+                    "amount": float(payment.amount),
+                    "status": payment.status,
+                    "provider_reference": payment.provider_reference,
+                }
+                for payment in payments
+            ],
+            "food_total": round(food_total, 2),
+            "food_order_count": len(food_orders),
+        })
+
+    return {
+        "items": result,
+        "total": int(total),
+        "limit": min(max(limit, 1), 500),
+        "offset": max(offset, 0),
+    }
+
+
 @router.get("/")
 def my_bookings(
     db: Session = Depends(get_db),

@@ -389,21 +389,42 @@ function FoodOrderPanel({booking,token,onUnauthorized}) {
     } finally {setPlacing(false)}
   }
 
-  return <div className="foodOrderArea">
-    <button className="foodOrderButton" onClick={()=>setOpen(x=>!x)}><span>🍽️ Order food</span><ArrowRight size={13}/></button>
-    {open&&<div className="foodMenu">
-      <div className="foodMenuHeader"><div><b>Food for this event</b><span>Only available for confirmed bookings</span></div><button onClick={()=>setOpen(false)}><X size={15}/></button></div>
-      {loading?<div className="foodLoading">Loading menu…</div>:
-        <div className="foodGrid">{items.map(item=><div className="foodItem" key={item.id}>
-          <div><b>{item.name}</b><span>₹{Number(item.price).toFixed(0)}</span></div>
-          <div className="foodQty"><button disabled={!cart[item.id]} onClick={()=>setCart(c=>({...c,[item.id]:Math.max(0,(c[item.id]||0)-1)}))}>−</button><b>{cart[item.id]||0}</b><button onClick={()=>setCart(c=>({...c,[item.id]:(c[item.id]||0)+1}))}>+</button></div>
-        </div>)}</div>}
-      <div className="foodCheckout"><span>{count} item{count===1?'':'s'} · ₹{total.toFixed(2)}</span><button className="primaryCta" disabled={!count||placing} onClick={placeOrder}>{placing?'Placing…':'Place food order'}</button></div>
-      {message&&<div className="foodMessage">{message}</div>}
-    </div>}
-  </div>
-}
+  return <>
+    <button className="foodOrderButton" onClick={()=>setOpen(true)}><span>🍽️ Order food</span><ArrowRight size={13}/></button>
 
+    {open&&<div className="backdrop foodOrderBackdrop" onClick={()=>setOpen(false)}>
+      <div className="modal foodOrderModal" onClick={e=>e.stopPropagation()}>
+        <button className="close" onClick={()=>setOpen(false)}><X/></button>
+
+        <div className="foodModalHero">
+          <div>
+            <span className="kicker">FOOD & BEVERAGE</span>
+            <h2>Order food</h2>
+            <p>Food ordering is available for your confirmed booking.</p>
+          </div>
+          <span className="foodBookingRef">#{booking.reference}</span>
+        </div>
+
+        <div className="foodModalBody">
+          {loading?<div className="foodLoading">Loading menu…</div>:
+            items.length?<div className="foodGrid">{items.map(item=><div className="foodItem" key={item.id}>
+              <div><b>{item.name}</b><span>₹{Number(item.price).toFixed(0)}</span></div>
+              <div className="foodQty"><button disabled={!cart[item.id]} onClick={()=>setCart(c=>({...c,[item.id]:Math.max(0,(c[item.id]||0)-1)}))}>−</button><b>{cart[item.id]||0}</b><button onClick={()=>setCart(c=>({...c,[item.id]:(c[item.id]||0)+1}))}>+</button></div>
+            </div>)}</div>:
+            <div className="dashboardEmpty small"><b>No food items available</b></div>}
+
+          <div className="foodCheckout">
+            <div><span>Selected</span><b>{count} item{count===1?'':'s'}</b></div>
+            <div><span>Total</span><b>₹{total.toFixed(2)}</b></div>
+            <button className="primaryCta" disabled={!count||placing} onClick={placeOrder}>{placing?'Placing…':'Place food order'} <ArrowRight size={14}/></button>
+          </div>
+
+          {message&&<div className="foodMessage">{message}</div>}
+        </div>
+      </div>
+    </div>}
+  </>
+}
 function NotificationCenter({notifications,onMarkRead,onMarkAllRead}) {
   const [filter,setFilter]=useState('all')
   const unread=notifications.filter(n=>n.status!=='READ').length

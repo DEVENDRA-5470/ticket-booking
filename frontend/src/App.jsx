@@ -225,7 +225,7 @@ function CustomerApp({token,user,onUnauthorized,onLogout}) {
       <div className="sideLabel">MY ACCOUNT</div>
       <button className={section==='overview'?'sideItem active':'sideItem'} onClick={()=>setSection('overview')}><ShieldCheck size={17}/> Overview</button>
       <button className={section==='events'?'sideItem active':'sideItem'} onClick={()=>setSection('events')}><CalendarDays size={17}/> Discover events</button>
-      <button className={section==='bookings'?'sideItem active':'sideItem'} onClick={()=>setSection('bookings')}><Ticket size={17}/> My bookings</button>
+      <button className={section==='bookings'?'sideItem active':'sideItem'} onClick={()=>setSection('bookings')}><Ticket size={17}/> My orders</button>
       <button className={section==='food'?'sideItem active':'sideItem'} onClick={()=>setSection('food')}><span>🍽️</span> Food orders</button>
       <button className={section==='notifications'?'sideItem active':'sideItem'} onClick={()=>setSection('notifications')}><Bell size={17}/><span>Notifications</span>{unread>0&&<em>{unread}</em>}</button>
       <div className="sideBottom"><div className="sideHealth"><i/> Platform operational</div><small>Customer workspace</small></div>
@@ -233,7 +233,7 @@ function CustomerApp({token,user,onUnauthorized,onLogout}) {
 
     <main className="customerMain">
       <div className="customerTopbar">
-        <div className="breadcrumb"><span>Account</span><ChevronRight size={13}/><b>{section==='overview'?'Overview':section==='events'?'Discover events':section==='bookings'?'My bookings':section==='food'?'Food orders':'Notifications'}</b></div>
+        <div className="breadcrumb"><span>Account</span><ChevronRight size={13}/><b>{section==='overview'?'Overview':section==='events'?'Discover events':section==='bookings'?'My orders':section==='food'?'Food orders':'Notifications'}</b></div>
         <div className="topbarActions">
           <span className="syncLabel"><i/> Live sync</span>
           <button className="iconButton" title="Refresh" onClick={()=>load(true)} disabled={refreshing}><RefreshCw size={16} className={refreshing?'spin':''}/></button>
@@ -339,24 +339,23 @@ function EventDetails({event,onClose,onLogin,onBooked}) {
 }
 
 function MyBookings({bookings,token,onChanged,onUnauthorized}) {
+  const [orders,setOrders]=useState([])
+  const [loading,setLoading]=useState(true)
   const [cancelling,setCancelling]=useState(null)
-  const cancel=async booking=>{
-    if(!window.confirm('Cancel this booking? Your seats will be released.'))return
-    setCancelling(booking.id)
-    try { await api('/v1/cancellations/'+booking.id,{method:'POST'},token); await onChanged() }
-    catch(e){if(e.status===401)onUnauthorized();else alert(e.message)}
-    finally{setCancelling(null)}
-  }
-  return <div>
-    <div className="customerHeader"><div><span className="kicker">RESERVATIONS</span><h2>My bookings.</h2><p>Review your reservations and manage cancellations.</p></div></div>
-    {bookings.length?<div className="bookingCards">{bookings.map(b=><article className="bookingCard" key={b.id}>
-      <div className="bookingCardMain"><div className="bookingRef"><Ticket size={16}/><b>{b.reference}</b></div><span className={'statusPill '+b.status.toLowerCase()}>{b.status}</span></div>
-      <div className="bookingCardMeta"><span>Event #{b.event_id}</span><span>Booking #{b.id}</span></div>
-      {b.status==='CONFIRMED'&&<div className="bookingCardAction bookingActions"><PaymentPanel booking={b} token={token} onUnauthorized={onUnauthorized}/><button className="dangerCta" disabled={cancelling===b.id} onClick={()=>cancel(b)}>{cancelling===b.id?'Cancelling…':'Cancel booking'}</button><FoodOrderPanel booking={b} token={token} onUnauthorized={onUnauthorized}/></div>}
-    </article>)}</div>:<div className="dashboardEmpty"><Ticket size={30}/><b>No bookings yet</b><span>Your confirmed reservations will appear here.</span></div>}
-  </div>
+  const load=async()=>{try{const data=await api('/v1/bookings/orders',{},token);setOrders(Array.isArray(data)?data:[])}catch(e){if(e.status===401)onUnauthorized()}finally{setLoading(false)}}
+  useEffect(()=>{load()},[token])
+  const cancel=async order=>{if(!window.confirm('Cancel this booking? Your seats and linked food orders will be released/cancelled.'))return;setCancelling(order.booking_id);try{await api('/v1/cancellations/'+order.booking_id,{method:'POST'},token);await load();await onChanged()}catch(e){if(e.status===401)onUnauthorized();else alert(e.message)}finally{setCancelling(null)}}
+  if(loading)return <div><div className="customerHeader"><div><span className="kicker">MY ORDERS</span><h2>My orders.</h2><p>Your complete booking record.</p></div></div><div className="dashboardEmpty">Loading your orders…</div></div>
+  return <div><div className="customerHeader"><div><span className="kicker">MY ORDERS</span><h2>Everything in one place.</h2><p>Event, seats, payment, food and booking status for every reservation.</p></div></div>
+  {orders.length?<div className="orderHistoryList">{orders.map(order=><article className="fullOrderCard" key={order.booking_id}>
+    <div className="fullOrderHeader"><div><span className="kicker">BOOKING</span><h3>{order.reference}</h3><small>Order #{order.booking_id} · {formatDate(order.created_at)}</small></div><span className={'statusPill '+order.status.toLowerCase()}>{order.status}</span></div>
+    <div className="orderEventBlock"><div><span className="orderLabel">EVENT</span><h4>{order.event?.name||'Event'}</h4><p>{order.event?.venue} · {formatDate(order.event?.starts_at)} · {formatTime(order.event?.starts_at)}</p></div><div className="orderSeats"><span className="orderLabel">SEATS</span><div>{order.seats.length?order.seats.map(s=><b key={s.id}>{s.number}</b>):<span>—</span>}</div></div></div>
+    <div className="orderInfoGrid"><div><span>Ticket total</span><b>₹{Number(order.ticket_amount).toFixed(2)}</b></div><div><span>Food total</span><b>₹{Number(order.food_total).toFixed(2)}</b></div><div><span>Grand total</span><b>₹{(Number(order.ticket_amount)+Number(order.food_total)).toFixed(2)}</b></div><div><span>Payment</span><b>{order.payments[0]?.status?.replaceAll('_',' ')||'NOT PAID'}</b></div></div>
+    {order.food_orders.length>0&&<div className="orderFoodBlock"><span className="orderLabel">FOOD ORDERS</span>{order.food_orders.map(food=><div className="orderFoodRow" key={food.order_id}><b>Food order #{food.order_id}</b><span>{food.items.map(i=>i.name+' × '+i.quantity).join(' · ')}</span><strong>₹{Number(food.total).toFixed(2)}</strong><em>{food.status}</em></div>)}</div>}
+    {order.payments.length>0&&<div className="orderPaymentBlock"><span className="orderLabel">PAYMENT HISTORY</span>{order.payments.map(p=><div key={p.id}><b>Payment #{p.id}</b><span>₹{Number(p.amount).toFixed(2)}</span><em>{p.status.replaceAll('_',' ')}</em>{p.provider_reference&&<small>{p.provider_reference}</small>}</div>)}</div>}
+    {order.status==='CONFIRMED'&&<div className="fullOrderActions"><PaymentPanel booking={{id:order.booking_id,reference:order.reference}} token={token} onUnauthorized={onUnauthorized}/><FoodOrderPanel booking={{id:order.booking_id,reference:order.reference}} token={token} onUnauthorized={onUnauthorized}/><button className="dangerCta" disabled={cancelling===order.booking_id} onClick={()=>cancel(order)}>{cancelling===order.booking_id?'Cancelling…':'Cancel booking'}</button></div>}
+  </article>)}</div>:<div className="dashboardEmpty"><Ticket size={30}/><b>No orders yet</b><span>Your complete reservations will appear here.</span></div>}</div>
 }
-
 function FoodOrdersPanel({token,onUnauthorized}) {
   const [orders,setOrders]=useState([])
   const [loading,setLoading]=useState(true)

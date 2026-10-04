@@ -234,7 +234,7 @@ def global_bookings(
     if status_filter:
         count_query = count_query.where(Booking.status == status_filter.upper())
     if search:
-        term = `%${search.trim()}%`
+        term = f"%{search.strip()}%"
         count_query = count_query.where(
             User.email.ilike(term)
             | User.name.ilike(term)

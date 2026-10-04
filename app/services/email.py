@@ -217,3 +217,35 @@ Regards,
         '<p style="font-size:12px;color:#7b8593;">For your security, TicketFlow will never ask you to share your password or authentication credentials by email.</p>',
     )
     _send_email(recipient_email, subject, text, html)
+
+
+
+def send_booking_confirmation_email(
+    recipient_email: str, recipient_name: str, reference: str, event_name: str,
+    venue: str, starts_at: str, seat_numbers: list[str], total_amount: float,
+) -> None:
+    seats = ", ".join(seat_numbers) or "—"
+    text = f"""Hello {recipient_name},
+
+Your TicketFlow booking is confirmed.
+
+Booking reference: {reference}
+Event: {event_name}
+Venue: {venue}
+Starts: {starts_at}
+Seats: {seats}
+Total ticket amount: ₹{total_amount:.2f}
+
+Please keep this confirmation for your records.
+
+Regards,
+{settings.app_name} Customer Experience Team
+"""
+    html = _layout(
+        recipient_name, "Booking confirmed", "RESERVATION CONFIRMATION",
+        _details_table([
+            ("Booking reference", reference), ("Event", event_name), ("Venue", venue),
+            ("Starts", starts_at), ("Seats", seats), ("Ticket total", f"₹{total_amount:.2f}"),
+        ]) + '<p style="font-size:13px;line-height:1.6;color:#596575;margin-top:18px;">Your reservation is confirmed. You can review the complete order, payment and food details from your TicketFlow account.</p>',
+    )
+    _send_email(recipient_email, f"Booking confirmed | {reference} | {event_name}", text, html)

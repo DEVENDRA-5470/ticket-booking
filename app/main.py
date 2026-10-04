@@ -2,7 +2,7 @@ from fastapi import FastAPI
 
 from app.core.config import settings
 from app.api.router import api_router
-from app.api.routes import auth
+from app.api.routes import auth, events, seats
 
 
 app = FastAPI(
@@ -19,7 +19,11 @@ app.include_router(
     tags=["Authentication"],
 )
 
-# All business services require a valid Bearer token
+# Public customer catalog. Only read-only event/seat discovery is public.
+app.include_router(events.public_router, prefix="/v1/events", tags=["Public Events"])
+app.include_router(seats.public_router, prefix="/v1/seats", tags=["Public Seats"])
+
+# All transactional/business services require a valid Bearer token.
 app.include_router(
     api_router,
     prefix="/v1",
